@@ -15,5 +15,4 @@ Import-Package: org.osgi.framework,
  org.eclipse.lsp4j.jsonrpc.json.adapters,
  com.google.gson
 Export-Package: org.jboss.tools.javac.ls.api,
- org.jboss.tools.javac.ls.api.dao,
- org.jboss.tools.javac.ls.api.dao.util
+ org.jboss.tools.javac.ls.api.dao
