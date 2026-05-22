@@ -16,7 +16,7 @@ Import-Package: com.google.gson,
  org.eclipse.lsp4j.jsonrpc.services,
  org.jboss.tools.javac.ls.api,
  org.jboss.tools.javac.ls.api.dao,
- org.jboss.tools.javac.ls.logging,
+ org.jboss.tools.rsp.logging,
  org.osgi.framework,
  org.osgi.service.log,
  org.slf4j

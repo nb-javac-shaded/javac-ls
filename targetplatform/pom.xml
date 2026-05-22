@@ -10,4 +10,157 @@
   <groupId>org.jboss.tools.rsp</groupId>
   <artifactId>javacls-target</artifactId>
   <packaging>eclipse-target-definition</packaging>
+
+  <build>
+    <plugins>
+      <!-- Create directory structure and generate target file -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.0.0</version>
+        <executions>
+          <execution>
+            <id>prepare-p2-repo</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <!-- Create directory structure -->
+                <mkdir dir="${project.basedir}/rsp-server-p2"/>
+                <!-- Generate target file from template -->
+                <copy file="${project.basedir}/javacls-target.target.template"
+                      tofile="${project.basedir}/javacls-target.target"
+                      overwrite="true">
+                  <filterset>
+                    <filter token="project.basedir" value="${project.basedir}"/>
+                  </filterset>
+                </copy>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-downloads</id>
+            <phase>process-resources</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <echo message="Verifying p2 repository files exist..."/>
+                <echo message="Contents of ${project.basedir}/rsp-server-p2:"/>
+                <exec executable="ls">
+                  <arg value="-lah"/>
+                  <arg value="${project.basedir}/rsp-server-p2"/>
+                </exec>
+                <!-- Fail if required files don't exist -->
+                <fail message="Missing artifacts.jar">
+                  <condition>
+                    <not>
+                      <available file="${project.basedir}/rsp-server-p2/artifacts.jar"/>
+                    </not>
+                  </condition>
+                </fail>
+                <fail message="Missing org.jboss.tools.rsp.logging JAR">
+                  <condition>
+                    <not>
+                      <available file="${project.basedir}/rsp-server-p2/org.jboss.tools.rsp.logging_0.26.20.Final.jar"/>
+                    </not>
+                  </condition>
+                </fail>
+                <echo message="All required files verified successfully!"/>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Download rsp-server p2 repository files -->
+      <plugin>
+        <groupId>com.googlecode.maven-download-plugin</groupId>
+        <artifactId>download-maven-plugin</artifactId>
+        <version>1.4.1</version>
+        <executions>
+          <execution>
+            <id>download-rsp-p2-artifacts</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>wget</goal>
+            </goals>
+            <configuration>
+              <url>https://github.com/redhat-developer/rsp-server/releases/download/tp0_26_20/artifacts.jar</url>
+              <outputDirectory>${project.basedir}/rsp-server-p2</outputDirectory>
+              <skipCache>true</skipCache>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
+          <execution>
+            <id>download-rsp-p2-content</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>wget</goal>
+            </goals>
+            <configuration>
+              <url>https://github.com/redhat-developer/rsp-server/releases/download/tp0_26_20/content.jar</url>
+              <outputDirectory>${project.basedir}/rsp-server-p2</outputDirectory>
+              <skipCache>true</skipCache>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
+          <execution>
+            <id>download-rsp-p2-index</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>wget</goal>
+            </goals>
+            <configuration>
+              <url>https://github.com/redhat-developer/rsp-server/releases/download/tp0_26_20/p2.index</url>
+              <outputDirectory>${project.basedir}/rsp-server-p2</outputDirectory>
+              <skipCache>true</skipCache>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
+          <execution>
+            <id>download-rsp-launching</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>wget</goal>
+            </goals>
+            <configuration>
+              <url>https://github.com/redhat-developer/rsp-server/releases/download/tp0_26_20/org.jboss.tools.rsp.launching_0.26.20.Final.jar</url>
+              <outputDirectory>${project.basedir}/rsp-server-p2</outputDirectory>
+              <skipCache>true</skipCache>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
+          <execution>
+            <id>download-rsp-launching-java</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>wget</goal>
+            </goals>
+            <configuration>
+              <url>https://github.com/redhat-developer/rsp-server/releases/download/tp0_26_20/org.jboss.tools.rsp.launching.java_0.26.20.Final.jar</url>
+              <outputDirectory>${project.basedir}/rsp-server-p2</outputDirectory>
+              <skipCache>true</skipCache>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
+          <execution>
+            <id>download-rsp-logging</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>wget</goal>
+            </goals>
+            <configuration>
+              <url>https://github.com/redhat-developer/rsp-server/releases/download/tp0_26_20/org.jboss.tools.rsp.logging_0.26.20.Final.jar</url>
+              <outputDirectory>${project.basedir}/rsp-server-p2</outputDirectory>
+              <skipCache>true</skipCache>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

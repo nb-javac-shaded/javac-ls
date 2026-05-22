@@ -34,11 +34,11 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.concurrent.CancellationException;
 
-import org.jboss.tools.javac.ls.eclipse.core.runtime.CoreException;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.IPath;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.IProgressMonitor;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.IStatus;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.Status;
+import org.jboss.tools.rsp.eclipse.core.runtime.CoreException;
+import org.jboss.tools.rsp.eclipse.core.runtime.IPath;
+import org.jboss.tools.rsp.eclipse.core.runtime.IProgressMonitor;
+import org.jboss.tools.rsp.eclipse.core.runtime.IStatus;
+import org.jboss.tools.rsp.eclipse.core.runtime.Status;
 import org.jboss.tools.javac.ls.foundation.core.FoundationCoreActivator;
 import org.jboss.tools.javac.ls.foundation.core.digest.DigestUtils;
 import org.jboss.tools.javac.ls.foundation.core.transport.CallbackByteChannel.ProgressCallBack;

@@ -28,17 +28,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import org.jboss.tools.javac.ls.api.dao.CommandLineDetails;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.CoreException;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.IStatus;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.Status;
-import org.jboss.tools.javac.ls.eclipse.debug.core.ArgumentUtils;
-import org.jboss.tools.javac.ls.eclipse.debug.core.DebugPluginConstants;
-import org.jboss.tools.javac.ls.eclipse.debug.core.ILaunch;
-import org.jboss.tools.javac.ls.eclipse.debug.core.model.IProcess;
-import org.jboss.tools.javac.ls.eclipse.jdt.launching.IJavaLaunchConfigurationConstants;
-import org.jboss.tools.javac.ls.eclipse.osgi.util.NLS;
+import org.jboss.tools.rsp.eclipse.core.runtime.CoreException;
+import org.jboss.tools.rsp.eclipse.core.runtime.IStatus;
+import org.jboss.tools.rsp.eclipse.core.runtime.Status;
+import org.jboss.tools.rsp.eclipse.debug.core.ArgumentUtils;
+import org.jboss.tools.rsp.eclipse.debug.core.DebugPluginConstants;
+import org.jboss.tools.rsp.eclipse.debug.core.ILaunch;
+import org.jboss.tools.rsp.eclipse.debug.core.model.IProcess;
+import org.jboss.tools.rsp.eclipse.jdt.launching.IJavaLaunchConfigurationConstants;
+import org.jboss.tools.rsp.eclipse.osgi.util.NLS;
 import org.jboss.tools.javac.ls.foundation.core.FoundationCoreActivator;
-import org.jboss.tools.javac.ls.launching.utils.ExecUtil;
+import org.jboss.tools.rsp.launching.utils.ExecUtil;
 
 public class ProcessUtility {
 

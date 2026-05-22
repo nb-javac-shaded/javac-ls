@@ -6,13 +6,13 @@ Bundle-Version: 0.0.1.qualifier
 Bundle-Activator: org.jboss.tools.javac.ls.foundation.core.FoundationCoreActivator
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
 Import-Package: org.jboss.tools.javac.ls.api.dao,
- org.jboss.tools.javac.ls.eclipse.core.runtime,
- org.jboss.tools.javac.ls.eclipse.debug.core,
- org.jboss.tools.javac.ls.eclipse.debug.core.model,
- org.jboss.tools.javac.ls.eclipse.jdt.launching,
- org.jboss.tools.javac.ls.eclipse.osgi.util,
+ org.jboss.tools.rsp.eclipse.core.runtime,
+ org.jboss.tools.rsp.eclipse.debug.core,
+ org.jboss.tools.rsp.eclipse.debug.core.model,
+ org.jboss.tools.rsp.eclipse.jdt.launching,
+ org.jboss.tools.rsp.eclipse.osgi.util,
  org.jboss.tools.javac.ls.foundation.core,
- org.jboss.tools.javac.ls.launching.utils,
+ org.jboss.tools.rsp.launching.utils,
  org.osgi.framework;version="1.9.0",
  org.slf4j;version="1.7.10"
 Automatic-Module-Name: org.jboss.tools.javac.ls.foundation.core

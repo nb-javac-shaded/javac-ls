@@ -8,7 +8,7 @@
  ******************************************************************************/
 package org.jboss.tools.javac.ls.foundation.core;
 
-import org.jboss.tools.javac.ls.eclipse.osgi.util.NLS;
+import org.jboss.tools.rsp.eclipse.osgi.util.NLS;
 import org.osgi.framework.BundleActivator;
 import org.osgi.framework.BundleContext;
 import org.slf4j.Logger;

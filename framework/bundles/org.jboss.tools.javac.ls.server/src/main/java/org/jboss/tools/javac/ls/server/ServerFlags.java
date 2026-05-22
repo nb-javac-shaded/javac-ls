@@ -9,7 +9,7 @@
 package org.jboss.tools.javac.ls.server;
 
 import java.io.File;
-import org.jboss.tools.javac.ls.logging.LoggingConstants;
+import org.jboss.tools.rsp.logging.LoggingConstants;
 
 /**
  * Collect all flags people may want to know about here

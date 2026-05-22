@@ -3,23 +3,23 @@
  * All rights reserved. This program is made available under the terms of the
  * Eclipse Public License v2.0 which accompanies this distribution, and is
  * available at http://www.eclipse.org/legal/epl-v20.html
- * 
+ *
  * Contributors: Red Hat, Inc.
  ******************************************************************************/
-package org.jboss.tools.javac.ls.launching.utils;
+package org.jboss.tools.javac.ls.api.dao;
 
 import java.util.Map;
 
-public class LaunchingCommandLineDetails {
+public class CommandLineDetails {
 	private String[] cmdLine;
 	private String workingDir;
 	private String[] envp;
 	private Map<String, String> properties;
 
-	public LaunchingCommandLineDetails() {
+	public CommandLineDetails() {
 	}
 
-	public LaunchingCommandLineDetails(String[] cmdLine, String workingDir, String[] envp, Map<String, String> properties) {
+	public CommandLineDetails(String[] cmdLine, String workingDir, String[] envp, Map<String, String> properties) {
 		this.cmdLine = cmdLine;
 		this.workingDir = workingDir;
 		this.envp = envp;

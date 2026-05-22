@@ -9,8 +9,8 @@
 package org.jboss.tools.javac.ls.foundation.core.launchers;
 
 import org.jboss.tools.javac.ls.api.dao.CommandLineDetails;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.CoreException;
-import org.jboss.tools.javac.ls.eclipse.debug.core.ILaunch;
+import org.jboss.tools.rsp.eclipse.core.runtime.CoreException;
+import org.jboss.tools.rsp.eclipse.debug.core.ILaunch;
 
 public interface IStartLauncher {
 	public ILaunch launch(String mode) throws CoreException;

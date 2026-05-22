@@ -11,12 +11,12 @@ package org.jboss.tools.javac.ls.foundation.core.launchers;
 import java.io.IOException;
 
 import org.jboss.tools.javac.ls.api.dao.CommandLineDetails;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.CoreException;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.IProgressMonitor;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.IStatus;
-import org.jboss.tools.javac.ls.eclipse.core.runtime.Status;
-import org.jboss.tools.javac.ls.eclipse.debug.core.ILaunch;
-import org.jboss.tools.javac.ls.eclipse.debug.core.model.IProcess;
+import org.jboss.tools.rsp.eclipse.core.runtime.CoreException;
+import org.jboss.tools.rsp.eclipse.core.runtime.IProgressMonitor;
+import org.jboss.tools.rsp.eclipse.core.runtime.IStatus;
+import org.jboss.tools.rsp.eclipse.core.runtime.Status;
+import org.jboss.tools.rsp.eclipse.debug.core.ILaunch;
+import org.jboss.tools.rsp.eclipse.debug.core.model.IProcess;
 import org.jboss.tools.javac.ls.foundation.core.FoundationCoreActivator;
 
 public class GenericProcessRunner {

@@ -8,8 +8,8 @@
  ******************************************************************************/
 package org.jboss.tools.javac.ls.foundation.core.launchers;
 
-import org.jboss.tools.javac.ls.eclipse.core.runtime.CoreException;
-import org.jboss.tools.javac.ls.eclipse.debug.core.ILaunch;
+import org.jboss.tools.rsp.eclipse.core.runtime.CoreException;
+import org.jboss.tools.rsp.eclipse.debug.core.ILaunch;
 
 public interface IShutdownLauncher {
 	public ILaunch launch(boolean force) throws CoreException;
