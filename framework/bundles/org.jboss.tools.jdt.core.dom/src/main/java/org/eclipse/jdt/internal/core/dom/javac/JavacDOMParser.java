@@ -32,6 +32,8 @@ import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
 import org.eclipse.jdt.internal.compiler.problem.DefaultProblem;
 import org.eclipse.jdt.internal.compiler.problem.ProblemSeverities;
+import org.eclipse.jdt.internal.javac.problem.JavacDiagnosticProblemConverter;
+import org.eclipse.jdt.internal.javac.problem.JavacProblem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -113,7 +115,7 @@ public class JavacDOMParser {
 
 			// Now register diagnostic listener - must be before Log is initialized
 			final Map<JavaFileObject, CompilationUnit> filesToUnits = new HashMap<>();
-			DiagnosticListener<JavaFileObject> diagnosticListener = createDiagnosticListener(filesToUnits);
+			DiagnosticListener<JavaFileObject> diagnosticListener = createDiagnosticListener(filesToUnits, context, compilerOptions);
 			context.put(DiagnosticListener.class, diagnosticListener);
 
 			// Configure javac options
@@ -324,7 +326,12 @@ public class JavacDOMParser {
 	 * Create diagnostic listener that forwards problems to the CompilationUnit.
 	 */
 	private DiagnosticListener<JavaFileObject> createDiagnosticListener(
-			Map<JavaFileObject, CompilationUnit> filesToUnits) {
+			Map<JavaFileObject, CompilationUnit> filesToUnits,
+			Context context,
+			Map<String, String> compilerOptions) {
+
+		// Create the JavacDiagnosticProblemConverter
+		JavacDiagnosticProblemConverter problemConverter = new JavacDiagnosticProblemConverter(compilerOptions, context);
 
 		// Collect problems for each compilation unit
 		Map<CompilationUnit, List<org.eclipse.jdt.core.compiler.IProblem>> unitProblems = new HashMap<>();
@@ -349,25 +356,28 @@ public class JavacDOMParser {
 					}
 
 					if (unit != null) {
-						// Convert javac Diagnostic to Eclipse IProblem
-						org.eclipse.jdt.core.compiler.IProblem problem = convertDiagnostic(diagnostic, source.getName());
-						unitProblems.computeIfAbsent(unit, k -> new ArrayList<>()).add(problem);
+						// Convert javac Diagnostic to Eclipse IProblem using the sophisticated converter
+						JavacProblem[] problems = problemConverter.createJavacProblems(diagnostic);
+						if (problems != null && problems.length > 0) {
+							for (JavacProblem problem : problems) {
+								unitProblems.computeIfAbsent(unit, k -> new ArrayList<>()).add(problem);
+							}
 
-						// Set problems on unit after collection
-						List<org.eclipse.jdt.core.compiler.IProblem> problems = unitProblems.get(unit);
-						org.eclipse.jdt.core.compiler.IProblem[] problemArray = new org.eclipse.jdt.core.compiler.IProblem[problems.size()];
-						for (int i = 0; i < problems.size(); i++) {
-							Object o = problems.get(i);
-							org.eclipse.jdt.core.compiler.IProblem o2 = (org.eclipse.jdt.core.compiler.IProblem)o;
-							problemArray[i] = o2;
+							// Set problems on unit after collection
+							List<org.eclipse.jdt.core.compiler.IProblem> allProblems = unitProblems.get(unit);
+							org.eclipse.jdt.core.compiler.IProblem[] problemArray = new org.eclipse.jdt.core.compiler.IProblem[allProblems.size()];
+							for (int i = 0; i < allProblems.size(); i++) {
+								problemArray[i] = allProblems.get(i);
+							}
+							JavacDomPackageAccessor.setProblems(unit, problemArray);
+							LOG.debug("Set {} problems on unit", allProblems.size());
 						}
-						JavacDomPackageAccessor.setProblems(unit, problemArray);
-						LOG.debug("Set {} problems on unit", problems.size());
 					}
 				}
 			}
 		};
 	}
+
 
 	/**
 	 * Convert javac Diagnostic to Eclipse IProblem.
