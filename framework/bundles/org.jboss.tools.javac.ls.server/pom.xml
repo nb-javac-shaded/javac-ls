@@ -14,46 +14,4 @@
 	<packaging>eclipse-plugin</packaging>
 
 	<name>Javac-LS : Server</name>
-
-	<dependencies>
-		<dependency>
-			<groupId>com.github.nb-javac-shaded.nb-javac-shaded</groupId>
-			<artifactId>nb-javac-shaded</artifactId>
-			<version>jdk-26-35</version>
-		</dependency>
-		<dependency>
-			<groupId>com.github.nb-javac-shaded.nb-javac-shaded</groupId>
-			<artifactId>nb-javac-api-shaded</artifactId>
-			<version>jdk-26-35</version>
-		</dependency>
-		<dependency>
-			<groupId>com.github.nb-javac-shaded</groupId>
-			<artifactId>nnb-doclint-shaded</artifactId>
-			<version>jdk-26-35-patch2</version>
-		</dependency>
-	</dependencies>
-
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-dependency-plugin</artifactId>
-				<executions>
-					<execution>
-						<id>copy-dependencies</id>
-						<phase>process-resources</phase>
-						<goals>
-							<goal>copy-dependencies</goal>
-						</goals>
-						<configuration>
-							<outputDirectory>${project.basedir}/lib</outputDirectory>
-							<includeArtifactIds>nb-javac-shaded,nb-javac-api-shaded,nnb-doclint-shaded</includeArtifactIds>
-							<overWriteReleases>false</overWriteReleases>
-							<overWriteSnapshots>true</overWriteSnapshots>
-						</configuration>
-					</execution>
-				</executions>
-			</plugin>
-		</plugins>
-	</build>
 </project>

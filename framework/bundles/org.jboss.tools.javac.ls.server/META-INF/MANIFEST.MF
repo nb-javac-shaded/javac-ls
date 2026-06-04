@@ -6,10 +6,7 @@ Automatic-Module-Name: org.jboss.tools.javac.ls.server
 Bundle-Version: 0.0.1.qualifier
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
 Bundle-Activator: org.jboss.tools.javac.ls.server.ServerCoreActivator
-Bundle-ClassPath: .,
- lib/nb-javac-shaded-jdk-26-35.jar,
- lib/nb-javac-api-shaded-jdk-26-35.jar,
- lib/nnb-doclint-shaded-jdk-26-35-patch2.jar
+Bundle-ClassPath: .
 Import-Package: com.google.gson,
  com.google.gson.reflect,
  org.eclipse.lsp4j.jsonrpc,
@@ -22,19 +19,6 @@ Import-Package: com.google.gson,
  org.slf4j
 Export-Package: org.jboss.tools.javac.ls.server,
  org.jboss.tools.javac.ls.server.model,
- org.jboss.tools.javac.ls.server.model.classpath,
- shaded.com.sun.source.doctree,
- shaded.com.sun.source.tree,
- shaded.com.sun.source.util,
- shaded.com.sun.tools.javac.api,
- shaded.com.sun.tools.javac.code,
- shaded.com.sun.tools.javac.comp,
- shaded.com.sun.tools.javac.file,
- shaded.com.sun.tools.javac.main,
- shaded.com.sun.tools.javac.parser,
- shaded.com.sun.tools.javac.tree,
- shaded.com.sun.tools.javac.util,
- shaded.javax.lang.model.element,
- shaded.javax.lang.model.type,
- shaded.javax.tools
-Require-Bundle: org.jboss.tools.javac.ls.api
+ org.jboss.tools.javac.ls.server.model.classpath
+Require-Bundle: org.jboss.tools.javac.ls.api,
+ org.jboss.tools.javac.ls.parser

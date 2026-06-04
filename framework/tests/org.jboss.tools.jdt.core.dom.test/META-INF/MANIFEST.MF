@@ -6,5 +6,7 @@ Automatic-Module-Name: org.jboss.tools.jdt.core.dom.test
 Bundle-Version: 0.0.1.qualifier
 Bundle-RequiredExecutionEnvironment: JavaSE-17
 Require-Bundle: org.jboss.tools.jdt.core.dom,
+ org.jboss.tools.javac.ls.parser,
  org.jboss.tools.javac.ls.server,
  org.junit
+Import-Package: org.eclipse.jdt.core
