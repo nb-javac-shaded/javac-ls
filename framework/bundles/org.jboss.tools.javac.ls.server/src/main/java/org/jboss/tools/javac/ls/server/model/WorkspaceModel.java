@@ -12,12 +12,21 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 
+import org.jboss.tools.javac.ls.index.store.JavaIndex;
+import org.jboss.tools.javac.ls.index.visitor.DOMToIndexVisitor;
+import org.jboss.tools.javac.ls.parser.bindings.JavacDOMParser;
 import org.jboss.tools.javac.ls.server.index.JavaIndexCache;
 import org.jboss.tools.javac.ls.server.model.classpath.ClasspathCache;
 import org.jboss.tools.javac.ls.server.model.classpath.IJavacClasspathEntry;
@@ -28,6 +37,9 @@ import org.slf4j.LoggerFactory;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
+
+import shaded.org.eclipse.jdt.core.dom.AST;
+import shaded.org.eclipse.jdt.core.dom.CompilationUnit;
 
 /**
  * Manages the workspace model - mapping project names to filesystem paths.
@@ -312,6 +324,148 @@ public class WorkspaceModel {
 	 */
 	public JavaIndexCache getIndexCache() {
 		return indexCache;
+	}
+
+	/**
+	 * Index all projects in the workspace.
+	 * Parses all .java files and populates the index.
+	 * This is a synchronous operation that acquires write lock on the index.
+	 */
+	public synchronized void indexAllProjects() {
+		LOG.info("Starting indexing of all projects in workspace");
+		long startTime = System.currentTimeMillis();
+		int totalFiles = 0;
+
+		for (WorkspaceProject project : getProjects()) {
+			int filesIndexed = indexProject(project.getName());
+			totalFiles += filesIndexed;
+		}
+
+		long duration = System.currentTimeMillis() - startTime;
+		LOG.info("Indexed {} files across {} projects in {}ms",
+				totalFiles, projects.size(), duration);
+	}
+
+	/**
+	 * Index a single project.
+	 * Parses all .java files in the project and populates the index.
+	 * This is a synchronous operation that acquires write lock on the index.
+	 *
+	 * @param projectName the project name
+	 * @return number of files indexed
+	 */
+	public synchronized int indexProject(String projectName) {
+		WorkspaceProject project = projects.get(projectName);
+		if (project == null) {
+			LOG.warn("Cannot index unknown project: {}", projectName);
+			return 0;
+		}
+
+		LOG.info("Indexing project: {}", projectName);
+		long startTime = System.currentTimeMillis();
+
+		File projectDir = new File(project.getPath());
+		if (!projectDir.exists() || !projectDir.isDirectory()) {
+			LOG.warn("Project directory does not exist: {}", project.getPath());
+			return 0;
+		}
+
+		// Find all .java files in the project
+		List<Path> javaFiles = findJavaFiles(projectDir.toPath());
+		if (javaFiles.isEmpty()) {
+			LOG.info("No Java files found in project: {}", projectName);
+			return 0;
+		}
+
+		// Get classpath for parsing
+		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+		List<File> classpath = new ArrayList<>();
+		for (IJavacClasspathEntry entry : classpathEntries) {
+			if (entry.getPath() != null) {
+				classpath.add(new File(entry.getPath()));
+			}
+		}
+
+		// Parse and index each file
+		JavacDOMParser parser = new JavacDOMParser();
+		int filesIndexed = 0;
+
+		indexCache.lockWrite();
+		try {
+			JavaIndex index = indexCache.getIndex();
+
+			for (Path javaFile : javaFiles) {
+				try {
+					indexFile(javaFile, parser, classpath, index);
+					filesIndexed++;
+				} catch (Exception e) {
+					LOG.error("Failed to index file: {}", javaFile, e);
+				}
+			}
+
+			// Mark index as dirty after indexing
+			indexCache.markDirty();
+		} finally {
+			indexCache.unlockWrite();
+		}
+
+		long duration = System.currentTimeMillis() - startTime;
+		LOG.info("Indexed {} files in project '{}' in {}ms", filesIndexed, projectName, duration);
+
+		return filesIndexed;
+	}
+
+	/**
+	 * Index a single Java file.
+	 *
+	 * @param javaFile the Java file to index
+	 * @param parser the parser to use
+	 * @param classpath the classpath for parsing
+	 * @param index the index to populate
+	 * @throws IOException if reading file fails
+	 */
+	private void indexFile(Path javaFile, JavacDOMParser parser, List<File> classpath, JavaIndex index)
+			throws IOException {
+		// Read file content
+		String sourceContent = new String(Files.readAllBytes(javaFile));
+
+		// Parse to CompilationUnit (without resolving bindings for performance)
+		CompilationUnit cu = parser.parse(
+				sourceContent,
+				javaFile.getFileName().toString(),
+				classpath,
+				AST.JLS21,
+				null,
+				false // Don't resolve bindings for initial indexing
+		);
+
+		// Remove old declarations for this file (incremental update)
+		index.removeFile(javaFile);
+
+		// Visit AST and populate index
+		DOMToIndexVisitor visitor = new DOMToIndexVisitor(index, javaFile);
+		cu.accept(visitor);
+		visitor.finishIndexing();
+
+		LOG.debug("Indexed file: {}", javaFile);
+	}
+
+	/**
+	 * Find all .java files in a directory recursively.
+	 *
+	 * @param rootDir the root directory to search
+	 * @return list of Java file paths
+	 */
+	private List<Path> findJavaFiles(Path rootDir) {
+		List<Path> javaFiles = new ArrayList<>();
+		try (Stream<Path> paths = Files.walk(rootDir)) {
+			paths.filter(Files::isRegularFile)
+				.filter(p -> p.toString().endsWith(".java"))
+				.forEach(javaFiles::add);
+		} catch (IOException e) {
+			LOG.error("Error finding Java files in directory: {}", rootDir, e);
+		}
+		return javaFiles;
 	}
 
 	/**
