@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jboss.tools.javac.ls.server.index.JavaIndexCache;
 import org.jboss.tools.javac.ls.server.model.classpath.ClasspathCache;
 import org.jboss.tools.javac.ls.server.model.classpath.IJavacClasspathEntry;
 import org.jboss.tools.javac.ls.server.model.classpath.ProjectClasspathDiscovery;
@@ -35,6 +36,7 @@ import com.google.gson.reflect.TypeToken;
 public class WorkspaceModel {
 	private static final Logger LOG = LoggerFactory.getLogger(WorkspaceModel.class);
 	private static final String WORKSPACE_FILE = "workspace.json";
+	private static final String INDEX_DIR = "index";
 
 	private final File workspaceDir;
 	private final File workspaceFile;
@@ -42,6 +44,7 @@ public class WorkspaceModel {
 	private final Gson gson;
 	private final ClasspathCache classpathCache;
 	private final ProjectClasspathDiscovery classpathDiscovery;
+	private final JavaIndexCache indexCache;
 
 	public WorkspaceModel(File workspaceDir) {
 		this.workspaceDir = workspaceDir;
@@ -50,7 +53,9 @@ public class WorkspaceModel {
 		this.gson = new GsonBuilder().setPrettyPrinting().create();
 		this.classpathCache = new ClasspathCache(workspaceDir);
 		this.classpathDiscovery = new ProjectClasspathDiscovery(classpathCache);
+		this.indexCache = new JavaIndexCache(new File(workspaceDir, INDEX_DIR).toPath());
 		load();
+		loadIndex();
 	}
 
 	/**
@@ -186,6 +191,13 @@ public class WorkspaceModel {
 	}
 
 	/**
+	 * Load the index from disk.
+	 */
+	private void loadIndex() {
+		indexCache.load();
+	}
+
+	/**
 	 * Save the workspace to disk.
 	 */
 	private void save() {
@@ -294,11 +306,23 @@ public class WorkspaceModel {
 	}
 
 	/**
+	 * Get the index cache.
+	 *
+	 * @return the index cache
+	 */
+	public JavaIndexCache getIndexCache() {
+		return indexCache;
+	}
+
+	/**
 	 * Shutdown the workspace model and release resources.
-	 * This includes shutting down the background classpath discovery executor.
+	 * This includes shutting down the background classpath discovery executor
+	 * and saving the index to disk.
 	 */
 	public void shutdown() {
 		LOG.info("Shutting down workspace model");
+		// Save index before shutdown
+		indexCache.save();
 		classpathDiscovery.shutdown();
 	}
 }
