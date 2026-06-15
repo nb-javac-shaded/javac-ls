@@ -67,28 +67,29 @@ public class MavenProjectIntegrationTest {
 		new File(projectDir, "src/test/java").mkdirs();
 
 		// Create a real pom.xml with actual dependencies
-		String pomContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<project xmlns=\"http://maven.apache.org/POM/4.0.0\"\n" +
-				"         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
-				"         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0\n" +
-				"                             http://maven.apache.org/maven-v4_0_0.xsd\">\n" +
-				"  <modelVersion>4.0.0</modelVersion>\n" +
-				"  <groupId>com.example</groupId>\n" +
-				"  <artifactId>" + projectName + "</artifactId>\n" +
-				"  <version>1.0.0-SNAPSHOT</version>\n" +
-				"  <dependencies>\n" +
-				"    <dependency>\n" +
-				"      <groupId>org.apache.commons</groupId>\n" +
-				"      <artifactId>commons-lang3</artifactId>\n" +
-				"      <version>3.12.0</version>\n" +
-				"    </dependency>\n" +
-				"    <dependency>\n" +
-				"      <groupId>commons-io</groupId>\n" +
-				"      <artifactId>commons-io</artifactId>\n" +
-				"      <version>2.11.0</version>\n" +
-				"    </dependency>\n" +
-				"  </dependencies>\n" +
-				"</project>";
+		String pomContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<project xmlns="http://maven.apache.org/POM/4.0.0"
+				         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+				         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+				                             http://maven.apache.org/maven-v4_0_0.xsd">
+				  <modelVersion>4.0.0</modelVersion>
+				  <groupId>com.example</groupId>
+				  <artifactId>%s</artifactId>
+				  <version>1.0.0-SNAPSHOT</version>
+				  <dependencies>
+				    <dependency>
+				      <groupId>org.apache.commons</groupId>
+				      <artifactId>commons-lang3</artifactId>
+				      <version>3.12.0</version>
+				    </dependency>
+				    <dependency>
+				      <groupId>commons-io</groupId>
+				      <artifactId>commons-io</artifactId>
+				      <version>2.11.0</version>
+				    </dependency>
+				  </dependencies>
+				</project>""".formatted(projectName);
 
 		Files.write(new File(projectDir, "pom.xml").toPath(), pomContent.getBytes());
 		return projectDir;

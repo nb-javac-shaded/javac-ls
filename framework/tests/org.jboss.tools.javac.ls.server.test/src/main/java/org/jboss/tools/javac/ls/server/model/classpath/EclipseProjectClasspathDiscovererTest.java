@@ -112,13 +112,14 @@ public class EclipseProjectClasspathDiscovererTest {
 		jarFile.createNewFile();
 
 		// Write a valid .classpath XML
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"	<classpathentry kind=\"lib\" path=\"lib/test.jar\"/>\n" +
-				"	<classpathentry kind=\"output\" path=\"bin\"/>\n" +
-				"	<classpathentry kind=\"con\" path=\"org.eclipse.jdt.launching.JRE_CONTAINER\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+					<classpathentry kind="lib" path="lib/test.jar"/>
+					<classpathentry kind="output" path="bin"/>
+					<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+				</classpath>""";
 
 		java.nio.file.Files.write(classpathFile.toPath(), classpathContent.getBytes());
 
