@@ -184,10 +184,11 @@ public class ProjectClasspathDiscoveryTest {
 		projectDir.mkdirs();
 		new File(projectDir, "src").mkdirs();
 
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+				</classpath>""";
 		Files.write(new File(projectDir, ".classpath").toPath(), classpathContent.getBytes());
 
 		WorkspaceProject proj = new WorkspaceProject("test-project", projectDir.getAbsolutePath());
@@ -205,10 +206,11 @@ public class ProjectClasspathDiscoveryTest {
 		File srcDir = new File(projectDir, "src");
 		srcDir.mkdirs();
 
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+				</classpath>""";
 		File classpathFile = new File(projectDir, ".classpath");
 		Files.write(classpathFile.toPath(), classpathContent.getBytes());
 
@@ -235,10 +237,11 @@ public class ProjectClasspathDiscoveryTest {
 		projectDir.mkdirs();
 		new File(projectDir, "src").mkdirs();
 
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+				</classpath>""";
 		Files.write(new File(projectDir, ".classpath").toPath(), classpathContent.getBytes());
 
 		WorkspaceProject proj = new WorkspaceProject("test-project", projectDir.getAbsolutePath());
@@ -260,10 +263,11 @@ public class ProjectClasspathDiscoveryTest {
 		File srcDir = new File(projectDir, "src");
 		srcDir.mkdirs();
 
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+				</classpath>""";
 		File classpathFile = new File(projectDir, ".classpath");
 		Files.write(classpathFile.toPath(), classpathContent.getBytes());
 
@@ -288,10 +292,11 @@ public class ProjectClasspathDiscoveryTest {
 		projectDir.mkdirs();
 		new File(projectDir, "src").mkdirs();
 
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+				</classpath>""";
 		Files.write(new File(projectDir, ".classpath").toPath(), classpathContent.getBytes());
 
 		WorkspaceProject proj = new WorkspaceProject("test-project", projectDir.getAbsolutePath());

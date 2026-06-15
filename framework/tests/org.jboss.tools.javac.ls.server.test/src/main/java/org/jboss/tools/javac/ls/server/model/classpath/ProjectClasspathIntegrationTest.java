@@ -78,16 +78,17 @@ public class ProjectClasspathIntegrationTest {
 		new File(projectDir, "bin").mkdirs();
 
 		// Write .classpath file
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src/main/java\"/>\n" +
-				"	<classpathentry kind=\"src\" path=\"src/test/java\"/>\n" +
-				"	<classpathentry kind=\"src\" path=\"src/main/resources\"/>\n" +
-				"	<classpathentry kind=\"lib\" path=\"lib/junit-4.13.jar\"/>\n" +
-				"	<classpathentry kind=\"lib\" path=\"lib/commons-lang3.jar\"/>\n" +
-				"	<classpathentry kind=\"output\" path=\"bin\"/>\n" +
-				"	<classpathentry kind=\"con\" path=\"org.eclipse.jdt.launching.JRE_CONTAINER\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src/main/java"/>
+					<classpathentry kind="src" path="src/test/java"/>
+					<classpathentry kind="src" path="src/main/resources"/>
+					<classpathentry kind="lib" path="lib/junit-4.13.jar"/>
+					<classpathentry kind="lib" path="lib/commons-lang3.jar"/>
+					<classpathentry kind="output" path="bin"/>
+					<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+				</classpath>""";
 		Files.write(new File(projectDir, ".classpath").toPath(), classpathContent.getBytes());
 
 		WorkspaceProject proj = new WorkspaceProject("eclipse-project", projectDir.getAbsolutePath());
@@ -134,13 +135,14 @@ public class ProjectClasspathIntegrationTest {
 		new File(projectDir, "target/test-classes").mkdirs();
 
 		// Write minimal pom.xml
-		String pomContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n" +
-				"  <modelVersion>4.0.0</modelVersion>\n" +
-				"  <groupId>com.example</groupId>\n" +
-				"  <artifactId>test-project</artifactId>\n" +
-				"  <version>1.0.0</version>\n" +
-				"</project>";
+		String pomContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<project xmlns="http://maven.apache.org/POM/4.0.0">
+				  <modelVersion>4.0.0</modelVersion>
+				  <groupId>com.example</groupId>
+				  <artifactId>test-project</artifactId>
+				  <version>1.0.0</version>
+				</project>""";
 		Files.write(new File(projectDir, "pom.xml").toPath(), pomContent.getBytes());
 
 		WorkspaceProject proj = new WorkspaceProject("maven-project", projectDir.getAbsolutePath());
@@ -172,23 +174,25 @@ public class ProjectClasspathIntegrationTest {
 		// Create Maven structure
 		new File(projectDir, "src/main/java").mkdirs();
 		new File(projectDir, "target/classes").mkdirs();
-		String pomContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n" +
-				"  <modelVersion>4.0.0</modelVersion>\n" +
-				"  <groupId>com.example</groupId>\n" +
-				"  <artifactId>hybrid</artifactId>\n" +
-				"  <version>1.0.0</version>\n" +
-				"</project>";
+		String pomContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<project xmlns="http://maven.apache.org/POM/4.0.0">
+				  <modelVersion>4.0.0</modelVersion>
+				  <groupId>com.example</groupId>
+				  <artifactId>hybrid</artifactId>
+				  <version>1.0.0</version>
+				</project>""";
 		Files.write(new File(projectDir, "pom.xml").toPath(), pomContent.getBytes());
 
 		// Also create Eclipse .classpath with DIFFERENT structure
 		new File(projectDir, "eclipse-src").mkdirs();
 		new File(projectDir, "bin").mkdirs();
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"eclipse-src\"/>\n" +
-				"	<classpathentry kind=\"output\" path=\"bin\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="eclipse-src"/>
+					<classpathentry kind="output" path="bin"/>
+				</classpath>""";
 		Files.write(new File(projectDir, ".classpath").toPath(), classpathContent.getBytes());
 
 		WorkspaceProject proj = new WorkspaceProject("hybrid-project", projectDir.getAbsolutePath());
@@ -215,11 +219,12 @@ public class ProjectClasspathIntegrationTest {
 		new File(projectDir, "src").mkdirs();
 		new File(projectDir, "bin").mkdirs();
 
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"	<classpathentry kind=\"output\" path=\"bin\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+					<classpathentry kind="output" path="bin"/>
+				</classpath>""";
 		Files.write(new File(projectDir, ".classpath").toPath(), classpathContent.getBytes());
 
 		WorkspaceProject proj = new WorkspaceProject("cached-project", projectDir.getAbsolutePath());

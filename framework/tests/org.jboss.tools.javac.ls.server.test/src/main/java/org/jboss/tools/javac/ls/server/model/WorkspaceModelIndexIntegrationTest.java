@@ -242,18 +242,25 @@ public class WorkspaceModelIndexIntegrationTest {
 		File srcDir = new File(projectDir, "src");
 		assertTrue("Should create src dir", srcDir.mkdirs());
 
-		String javaSource1 = "package com.example;\n\n" +
-				"public class MyClass {\n" +
-				"	private String name;\n\n" +
-				"	public String getName() {\n" +
-				"		return name;\n" +
-				"	}\n" +
-				"}\n";
+		String javaSource1 = """
+				package com.example;
 
-		String javaSource2 = "package com.example;\n\n" +
-				"public interface MyInterface {\n" +
-				"	void doSomething();\n" +
-				"}\n";
+				public class MyClass {
+					private String name;
+
+					public String getName() {
+						return name;
+					}
+				}
+				""";
+
+		String javaSource2 = """
+				package com.example;
+
+				public interface MyInterface {
+					void doSomething();
+				}
+				""";
 
 		File javaFile1 = new File(srcDir, "MyClass.java");
 		Files.write(javaFile1.toPath(), javaSource1.getBytes(StandardCharsets.UTF_8));

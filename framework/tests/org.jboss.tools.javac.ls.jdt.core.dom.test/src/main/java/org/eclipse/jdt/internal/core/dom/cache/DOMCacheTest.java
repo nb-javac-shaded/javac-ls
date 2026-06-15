@@ -66,10 +66,11 @@ public class DOMCacheTest {
 	@Test
 	public void testCacheMissOnFirstAccess() throws IOException {
 		// Create a test file
-		Path sourceFile = createTestFile("TestClass.java",
-			"public class TestClass {\n" +
-			"    public void testMethod() {}\n" +
-			"}\n");
+		Path sourceFile = createTestFile("TestClass.java", """
+			public class TestClass {
+			    public void testMethod() {}
+			}
+			""");
 
 		URI fileUri = sourceFile.toUri();
 
@@ -182,12 +183,13 @@ public class DOMCacheTest {
 	@Test
 	public void testProblemsAreCached() throws IOException {
 		// Create a file with syntax errors
-		Path sourceFile = createTestFile("ErrorClass.java",
-			"public class ErrorClass {\n" +
-			"    public void method() {\n" +
-			"        undefinedVariable = 5;\n" +
-			"    }\n" +
-			"}\n");
+		Path sourceFile = createTestFile("ErrorClass.java", """
+			public class ErrorClass {
+			    public void method() {
+			        undefinedVariable = 5;
+			    }
+			}
+			""");
 
 		URI fileUri = sourceFile.toUri();
 

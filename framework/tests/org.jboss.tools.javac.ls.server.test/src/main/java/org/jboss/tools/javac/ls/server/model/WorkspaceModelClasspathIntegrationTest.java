@@ -71,13 +71,14 @@ public class WorkspaceModelClasspathIntegrationTest {
 		new File(libDir, "test.jar").createNewFile();
 
 		// Write .classpath file
-		String classpathContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<classpath>\n" +
-				"	<classpathentry kind=\"src\" path=\"src\"/>\n" +
-				"	<classpathentry kind=\"src\" path=\"test\"/>\n" +
-				"	<classpathentry kind=\"lib\" path=\"lib/test.jar\"/>\n" +
-				"	<classpathentry kind=\"output\" path=\"bin\"/>\n" +
-				"</classpath>";
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+					<classpathentry kind="src" path="test"/>
+					<classpathentry kind="lib" path="lib/test.jar"/>
+					<classpathentry kind="output" path="bin"/>
+				</classpath>""";
 		Files.write(new File(projectDir, ".classpath").toPath(), classpathContent.getBytes());
 
 		return projectDir;
@@ -92,20 +93,21 @@ public class WorkspaceModelClasspathIntegrationTest {
 		new File(projectDir, "src/test/java").mkdirs();
 
 		// Write pom.xml with real dependencies
-		String pomContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-				"<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n" +
-				"  <modelVersion>4.0.0</modelVersion>\n" +
-				"  <groupId>com.example</groupId>\n" +
-				"  <artifactId>" + projectName + "</artifactId>\n" +
-				"  <version>1.0.0</version>\n" +
-				"  <dependencies>\n" +
-				"    <dependency>\n" +
-				"      <groupId>commons-io</groupId>\n" +
-				"      <artifactId>commons-io</artifactId>\n" +
-				"      <version>2.11.0</version>\n" +
-				"    </dependency>\n" +
-				"  </dependencies>\n" +
-				"</project>";
+		String pomContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<project xmlns="http://maven.apache.org/POM/4.0.0">
+				  <modelVersion>4.0.0</modelVersion>
+				  <groupId>com.example</groupId>
+				  <artifactId>%s</artifactId>
+				  <version>1.0.0</version>
+				  <dependencies>
+				    <dependency>
+				      <groupId>commons-io</groupId>
+				      <artifactId>commons-io</artifactId>
+				      <version>2.11.0</version>
+				    </dependency>
+				  </dependencies>
+				</project>""".formatted(projectName);
 		Files.write(new File(projectDir, "pom.xml").toPath(), pomContent.getBytes());
 
 		return projectDir;
