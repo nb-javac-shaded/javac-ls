@@ -29,7 +29,13 @@ public class ServerCoreActivator implements BundleActivator {
 		JavacLsServerLauncher launcher = null;
 		try {
 			launcher = new JavacLsServerLauncher("" + port);
+			launcher.initialize(false);
+
+			// Note: Don't wait for READY in OSGi context - would block bundle activation
+			// Workspace initializes asynchronously, clients can connect during indexing
+
 			launcher.launch();
+			// Note: Don't add shutdown hook in OSGi - stop() method handles cleanup
 			LOG.info("Javac-LS server started on port {}", port);
 		} catch (RuntimeException re) {
 			LOG.error("Unable to launch Javac-LS server", re);

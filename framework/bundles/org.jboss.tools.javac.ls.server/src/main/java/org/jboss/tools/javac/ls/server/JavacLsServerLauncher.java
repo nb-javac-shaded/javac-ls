@@ -28,6 +28,7 @@ public class JavacLsServerLauncher {
 
 	public static void main(String[] args) throws Exception {
 		JavacLsServerLauncher instance = new JavacLsServerLauncher(args[0]);
+		instance.initialize();
 
 		// Wait for READY state if configured
 		if (ServerFlags.isStartupWaitForReady()) {
@@ -59,17 +60,25 @@ public class JavacLsServerLauncher {
 	private ServerSocket serverSocket;
 	protected String portString;
 	private WorkspaceModel workspaceModel;
+	private InstanceRegistry instanceRegistry;
 
 	public JavacLsServerLauncher(String portString) {
 		this.portString = portString;
 		this.serverImpl = new JavacLSServerImpl(this);
-		createWorkspaceModel();
 	}
 
-	private void createWorkspaceModel() {
+	/**
+	 * Initialize the workspace model. Must be called after construction
+	 * and before using the launcher.
+	 */
+	public void initialize() {
+		initialize(isStartupSync());
+	}
+	
+	public void initialize(boolean sync) {
 		// Log and ensure workspace directory exists
-		String workspacePath = ServerFlags.getWorkspacePath();
-		java.io.File workspaceDir = ServerFlags.getWorkspaceDirectory();
+		String workspacePath = getWorkspacePath();
+		java.io.File workspaceDir = getWorkspaceDirectory();
 		if (!workspaceDir.exists()) {
 			if (workspaceDir.mkdirs()) {
 				LOG.info("Created workspace directory: {}", workspacePath);
@@ -80,14 +89,48 @@ public class JavacLsServerLauncher {
 			LOG.info("Using workspace directory: {}", workspacePath);
 		}
 
+		// Register this instance in ~/.javacls/running
+		int port = Integer.parseInt(portString);
+		instanceRegistry = new InstanceRegistry(port, workspacePath);
+		instanceRegistry.register();
+
 		// Load workspace model (loads from cache only, no parsing)
 		workspaceModel = new WorkspaceModel(workspaceDir);
 		LOG.info("Loaded workspace model with {} projects", workspaceModel.getProjectCount());
 
 		// Start indexing with binding resolution (sync or async based on flag)
-		boolean sync = ServerFlags.isStartupSync();
 		workspaceModel.startIndexing(sync);
 		LOG.info("Started {} indexing with binding resolution", sync ? "synchronous" : "background");
+	}
+
+	/**
+	 * Get the workspace path from server flags.
+	 * Can be overridden in tests to provide a custom workspace path.
+	 *
+	 * @return workspace path string
+	 */
+	protected String getWorkspacePath() {
+		return ServerFlags.getWorkspacePath();
+	}
+
+	/**
+	 * Get the workspace directory from server flags.
+	 * Can be overridden in tests to provide a custom workspace directory.
+	 *
+	 * @return workspace directory file
+	 */
+	protected java.io.File getWorkspaceDirectory() {
+		return ServerFlags.getWorkspaceDirectory();
+	}
+
+	/**
+	 * Check if startup should be synchronous from server flags.
+	 * Can be overridden in tests to control indexing behavior.
+	 *
+	 * @return true if startup should be synchronous
+	 */
+	protected boolean isStartupSync() {
+		return ServerFlags.isStartupSync();
 	}
 
 	public List<JavacLSClient> getClients() {
@@ -138,6 +181,12 @@ public class JavacLsServerLauncher {
 
 	public void shutdown() {
 		LOG.info("Shutting down server");
+
+		// Unregister this instance from the registry
+		if (instanceRegistry != null) {
+			instanceRegistry.unregister();
+		}
+
 		if (socketRunnable != null) {
 			socketRunnable.shutdown();
 		}
