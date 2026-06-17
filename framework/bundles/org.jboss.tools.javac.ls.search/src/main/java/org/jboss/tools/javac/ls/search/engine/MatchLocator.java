@@ -38,8 +38,8 @@ public class MatchLocator {
      * @param requestor the callback to receive matches
      */
     public void locateMatches(Path file, String source, SearchPattern pattern, SearchRequestor requestor) {
-        // Parse the source file to AST
-        CompilationUnit cu = parser.parse(source, file.toString(), null, AST.JLS21, null, false);
+        // Parse the source file to AST with binding resolution enabled
+        CompilationUnit cu = parser.parse(source, file.toString(), null, AST.JLS21, null, true);
         if (cu == null) {
             return;
         }

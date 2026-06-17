@@ -18,6 +18,7 @@ import org.jboss.tools.javac.ls.search.engine.SearchEngine;
 import org.jboss.tools.javac.ls.search.match.SearchMatch;
 import org.jboss.tools.javac.ls.search.pattern.TypePattern;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class SearchEngineTest {
@@ -116,5 +117,118 @@ public class SearchEngineTest {
 
         // Empty search string should return no results
         assertEquals(0, collectedMatches.size());
+    }
+
+    /**
+     * This test demonstrates a critical deficiency: we cannot distinguish between
+     * two types with the same simple name in different packages.
+     *
+     * Without binding resolution, "Shape" in CircleImpl could refer to either
+     * com.example.Shape or com.other.Shape, but we can't tell which one.
+     *
+     * Expected behavior (with bindings): Only match com.example.Shape
+     * Current behavior (without bindings): Matches both declarations incorrectly
+     *
+     * TODO: Remove @Ignore once we enable binding resolution in MatchLocator
+     * See MatchLocator.java line 42 - currently passes false for resolveBindings
+     *
+     * UPDATE: Binding resolution now enabled - test should pass
+     */
+    @Test
+    public void testCannotDistinguishTypesWithSameSimpleName() {
+        // Set up three files with two different "Shape" types
+        Path exampleShape = Paths.get("/test/com/example/Shape.java");
+        Path otherShape = Paths.get("/test/com/other/Shape.java");
+        Path circleImpl = Paths.get("/test/com/example/CircleImpl.java");
+
+        String exampleShapeSource =
+            "package com.example;\n" +
+            "public class Shape {\n" +
+            "    public void draw() {}\n" +
+            "}";
+
+        String otherShapeSource =
+            "package com.other;\n" +
+            "public class Shape {\n" +
+            "    public void render() {}\n" +
+            "}";
+
+        // CircleImpl uses com.example.Shape (same package, no import needed)
+        String circleImplSource =
+            "package com.example;\n" +
+            "public class CircleImpl {\n" +
+            "    private Shape shape;  // This refers to com.example.Shape\n" +
+            "}";
+
+        List<MatchLocator.FileContent> files = List.of(
+            new MatchLocator.FileContent(exampleShape, exampleShapeSource),
+            new MatchLocator.FileContent(otherShape, otherShapeSource),
+            new MatchLocator.FileContent(circleImpl, circleImplSource)
+        );
+
+        // Search for all occurrences of "Shape"
+        TypePattern pattern = new TypePattern("Shape", null, TypePattern.SearchFor.ALL_OCCURRENCES);
+        searchEngine.searchInFiles(files, pattern, collectedMatches::add);
+
+        // We should find 3 matches total:
+        // 1. Declaration of com.example.Shape
+        // 2. Declaration of com.other.Shape
+        // 3. Reference to Shape in CircleImpl
+        assertTrue("Should find at least 3 matches", collectedMatches.size() >= 3);
+
+        // Count matches by file
+        long exampleShapeMatches = collectedMatches.stream()
+            .filter(m -> m.getFile().equals(exampleShape))
+            .count();
+        long otherShapeMatches = collectedMatches.stream()
+            .filter(m -> m.getFile().equals(otherShape))
+            .count();
+        long circleImplMatches = collectedMatches.stream()
+            .filter(m -> m.getFile().equals(circleImpl))
+            .count();
+
+        // Both Shape files have declarations
+        assertEquals("com.example.Shape should have 1 declaration", 1, exampleShapeMatches);
+        assertEquals("com.other.Shape should have 1 declaration", 1, otherShapeMatches);
+        assertEquals("CircleImpl should have 1 reference to Shape", 1, circleImplMatches);
+
+        // THE DEFICIENCY: Without binding resolution, we cannot determine that
+        // CircleImpl's "Shape" reference specifically refers to com.example.Shape
+        // and NOT to com.other.Shape.
+        //
+        // To fix this, we need to:
+        // 1. Enable binding resolution in MatchLocator (line 42: pass true instead of false)
+        // 2. Update TypePattern to use ITypeBinding.getQualifiedName() for comparison
+        // 3. Support fully-qualified patterns like "com.example.Shape"
+
+        System.out.println("\n=== DEFICIENCY DEMONSTRATION ===");
+        System.out.println("Found " + collectedMatches.size() + " matches for 'Shape':");
+        for (SearchMatch match : collectedMatches) {
+            System.out.println("  - " + match.getFile().getFileName() + " at offset " + match.getOffset());
+        }
+        System.out.println("\nWITHOUT binding resolution, we cannot determine that CircleImpl's 'Shape'");
+        System.out.println("refers specifically to com.example.Shape and NOT com.other.Shape.");
+        System.out.println("Both Shape declarations match the simple name 'Shape' equally.");
+        System.out.println("================================\n");
+
+        // This assertion will FAIL until we fix the issue:
+        // We should be able to search for "com.example.Shape" specifically
+        // and NOT match com.other.Shape
+        TypePattern qualifiedPattern = new TypePattern("com.example.Shape", null, TypePattern.SearchFor.ALL_OCCURRENCES);
+        List<SearchMatch> qualifiedMatches = new ArrayList<>();
+        searchEngine.searchInFiles(files, qualifiedPattern, qualifiedMatches::add);
+
+        // With proper FQDN matching, we should only find matches in:
+        // - exampleShape (the declaration of com.example.Shape)
+        // - circleImpl (the reference to com.example.Shape)
+        // We should NOT match otherShape (com.other.Shape)
+        long incorrectMatches = qualifiedMatches.stream()
+            .filter(m -> m.getFile().equals(otherShape))
+            .count();
+
+        // TODO: This assertion currently FAILS because we match simple names only
+        // Once we enable binding resolution, this should pass
+        assertEquals("Searching for 'com.example.Shape' should NOT match com.other.Shape",
+            0, incorrectMatches);
     }
 }

@@ -50,6 +50,16 @@ public class TypePattern extends SearchPattern {
         if (node instanceof SimpleType) {
             SimpleType simpleType = (SimpleType) node;
             String typeName = simpleType.getName().getFullyQualifiedName();
+
+            // Try to get qualified name from binding for better matching
+            ITypeBinding binding = simpleType.resolveBinding();
+            if (binding != null && binding.getQualifiedName() != null) {
+                // Match against both simple and qualified names
+                if (matchesName(binding.getQualifiedName())) {
+                    return true;
+                }
+            }
+
             return matchesName(typeName);
         }
 
@@ -57,6 +67,12 @@ public class TypePattern extends SearchPattern {
             SimpleName name = (SimpleName) node;
             ITypeBinding binding = getTypeBinding(name);
             if (binding != null) {
+                // Use qualified name for precise matching when available
+                String qualifiedName = binding.getQualifiedName();
+                if (qualifiedName != null && matchesName(qualifiedName)) {
+                    return true;
+                }
+                // Fall back to simple name
                 return matchesName(binding.getName());
             }
             return matchesName(name.getIdentifier());
@@ -68,6 +84,17 @@ public class TypePattern extends SearchPattern {
     private boolean matchesDeclaration(ASTNode node) {
         if (node instanceof TypeDeclaration) {
             TypeDeclaration typeDecl = (TypeDeclaration) node;
+
+            // Try to get qualified name from binding for better matching
+            ITypeBinding binding = typeDecl.resolveBinding();
+            if (binding != null && binding.getQualifiedName() != null) {
+                // Match against both simple and qualified names
+                if (matchesName(binding.getQualifiedName())) {
+                    return true;
+                }
+            }
+
+            // Fall back to simple name
             return matchesName(typeDecl.getName().getIdentifier());
         }
 
