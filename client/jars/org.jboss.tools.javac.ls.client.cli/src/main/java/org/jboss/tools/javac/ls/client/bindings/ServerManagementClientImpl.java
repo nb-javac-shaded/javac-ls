@@ -10,7 +10,8 @@ package org.jboss.tools.javac.ls.client.bindings;
 
 import org.jboss.tools.javac.ls.api.JavacLSClient;
 import org.jboss.tools.javac.ls.api.JavacLSServer;
-import org.jboss.tools.javac.ls.api.dao.Status;
+import org.jboss.tools.javac.ls.api.dao.InitializationState;
+import org.jboss.tools.javac.ls.api.dao.ProjectInfo;
 
 public class ServerManagementClientImpl implements JavacLSClient {
 
@@ -25,8 +26,18 @@ public class ServerManagementClientImpl implements JavacLSClient {
 	}
 
 	@Override
-	public void statusChanged(Status status) {
-		System.out.println("Status changed: " + status.toString());
+	public void initializationStateChanged(InitializationState state) {
+		System.out.println("Initialization state changed: " + state.toString());
+	}
+
+	@Override
+	public void projectAdded(ProjectInfo project) {
+		System.out.println("Project added: " + project.toString());
+	}
+
+	@Override
+	public void projectRemoved(ProjectInfo project) {
+		System.out.println("Project removed: " + project.toString());
 	}
 
 }

@@ -19,6 +19,7 @@ Import-Package: com.google.gson,
  org.slf4j,
  shaded.org.eclipse.jdt.core.dom
 Export-Package: org.jboss.tools.javac.ls.server,
+ org.jboss.tools.javac.ls.server.event,
  org.jboss.tools.javac.ls.server.index,
  org.jboss.tools.javac.ls.server.model,
  org.jboss.tools.javac.ls.server.model.classpath

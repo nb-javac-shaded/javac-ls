@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import org.jboss.tools.javac.ls.api.dao.InitializationState;
 import org.jboss.tools.javac.ls.index.store.JavaIndex;
 import org.jboss.tools.javac.ls.search.engine.SearchEngine;
 import org.jboss.tools.javac.ls.search.match.SearchMatch;
@@ -124,7 +125,7 @@ public class JavacLsServerLauncherTest {
 		// Just verify it's not in an invalid state
 		int state = workspace.getInitializationState();
 		assertTrue("Workspace should be in valid state",
-				state >= WorkspaceModel.STATE_LOADING_CACHE);
+				state >= InitializationState.STATE_LOADING_CACHE);
 	}
 
 	@Test

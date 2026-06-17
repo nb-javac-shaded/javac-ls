@@ -23,11 +23,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+import org.jboss.tools.javac.ls.api.dao.InitializationState;
 import org.jboss.tools.javac.ls.index.store.JavaIndex;
 import org.jboss.tools.javac.ls.index.visitor.DOMToIndexVisitor;
 import org.jboss.tools.javac.ls.parser.bindings.JavacDOMParser;
@@ -55,12 +57,6 @@ public class WorkspaceModel {
 	private static final String WORKSPACE_FILE = "workspace.json";
 	private static final String INDEX_DIR = "index";
 
-	// Initialization state constants (ordered by progression)
-	public static final int STATE_NOT_STARTED = 0;
-	public static final int STATE_LOADING_CACHE = 1;
-	public static final int STATE_INDEXING = 2;
-	public static final int STATE_READY = 3;
-
 	private final File workspaceDir;
 	private final File workspaceFile;
 	private final Map<String, WorkspaceProject> projects;
@@ -70,7 +66,8 @@ public class WorkspaceModel {
 	private final JavaIndexCache indexCache;
 	private final DOMCache domCache;
 	private final ExecutorService backgroundExecutor;
-	private volatile int initializationState = STATE_NOT_STARTED;
+	private final List<WorkspaceModelListener> listeners;
+	private volatile int initializationState = InitializationState.STATE_NOT_STARTED;
 
 	public WorkspaceModel(File workspaceDir) {
 		this.workspaceDir = workspaceDir;
@@ -81,6 +78,7 @@ public class WorkspaceModel {
 		this.classpathDiscovery = new ProjectClasspathDiscovery(classpathCache);
 		this.indexCache = new JavaIndexCache(new File(workspaceDir, INDEX_DIR).toPath());
 		this.domCache = new DOMCache();
+		this.listeners = new CopyOnWriteArrayList<>();
 		this.backgroundExecutor = Executors.newSingleThreadExecutor(r -> {
 			Thread t = new Thread(r, "WorkspaceModel-Background");
 			t.setDaemon(true);
@@ -88,7 +86,7 @@ public class WorkspaceModel {
 		});
 
 		// Load cached data
-		initializationState = STATE_LOADING_CACHE;
+		setInitializationState(InitializationState.STATE_LOADING_CACHE);
 		load();
 		loadIndex();
 
@@ -112,7 +110,7 @@ public class WorkspaceModel {
 	 * @return true if state is at LOADING_CACHE or beyond
 	 */
 	public boolean isCacheLoaded() {
-		return initializationState >= STATE_LOADING_CACHE;
+		return initializationState >= InitializationState.STATE_LOADING_CACHE;
 	}
 
 	/**
@@ -121,7 +119,7 @@ public class WorkspaceModel {
 	 * @return true if in INDEXING state
 	 */
 	public boolean isIndexing() {
-		return initializationState == STATE_INDEXING;
+		return initializationState == InitializationState.STATE_INDEXING;
 	}
 
 	/**
@@ -130,17 +128,21 @@ public class WorkspaceModel {
 	 * @return true if in READY state
 	 */
 	public boolean isReady() {
-		return initializationState == STATE_READY;
+		return initializationState == InitializationState.STATE_READY;
 	}
 
 	/**
-	 * Set the initialization state (package-private for testing).
+	 * Set the initialization state and notify listeners.
 	 *
 	 * @param state the new state
 	 */
-	void setInitializationState(int state) {
-		LOG.debug("Initialization state transition: {} -> {}", initializationState, state);
-		this.initializationState = state;
+	public void setInitializationState(int state) {
+		int oldState = this.initializationState;
+		if (oldState != state) {
+			LOG.debug("Initialization state transition: {} -> {}", oldState, state);
+			this.initializationState = state;
+			notifyInitializationStateChanged(oldState, state);
+		}
 	}
 
 	/**
@@ -167,12 +169,14 @@ public class WorkspaceModel {
 		projects.put(name, project);
 		save();
 		LOG.info("Added project '{}' at path: {}", name, path);
+		notifyProjectAdded(project);
 		return true;
 	}
 
 	/**
 	 * Remove a project from the workspace.
 	 * Note: This only removes it from the workspace model, not from the filesystem.
+	 * Also cleans up index entries for files in the removed project.
 	 *
 	 * @param name the project name
 	 * @return true if removed, false if not found
@@ -180,12 +184,48 @@ public class WorkspaceModel {
 	public synchronized boolean removeProject(String name) {
 		WorkspaceProject removed = projects.remove(name);
 		if (removed != null) {
+			// Clean up index entries for this project
+			cleanupProjectIndex(removed);
+
 			save();
 			LOG.info("Removed project '{}' from workspace", name);
+			notifyProjectRemoved(removed);
 			return true;
 		}
 		LOG.warn("Project '{}' not found in workspace", name);
 		return false;
+	}
+
+	/**
+	 * Clean up index entries for a removed project.
+	 *
+	 * @param project the project being removed
+	 */
+	private void cleanupProjectIndex(WorkspaceProject project) {
+		File projectDir = new File(project.getPath());
+		if (!projectDir.exists() || !projectDir.isDirectory()) {
+			return;
+		}
+
+		// Find all .java files in the project
+		List<Path> javaFiles = findJavaFiles(projectDir.toPath());
+		if (javaFiles.isEmpty()) {
+			return;
+		}
+
+		LOG.info("Cleaning up index entries for {} files in project '{}'", javaFiles.size(), project.getName());
+
+		// Remove each file from the index
+		indexCache.lockWrite();
+		try {
+			JavaIndex index = indexCache.getIndex();
+			for (Path javaFile : javaFiles) {
+				index.removeFile(javaFile);
+			}
+			indexCache.markDirty();
+		} finally {
+			indexCache.unlockWrite();
+		}
 	}
 
 	/**
@@ -415,7 +455,7 @@ public class WorkspaceModel {
 	 */
 	public synchronized void indexAllProjects() {
 		int previousState = initializationState;
-		initializationState = STATE_INDEXING;
+		setInitializationState(InitializationState.STATE_INDEXING);
 
 		try {
 			LOG.info("Starting indexing of all projects in workspace");
@@ -432,7 +472,7 @@ public class WorkspaceModel {
 					totalFiles, projects.size(), duration);
 		} finally {
 			// Restore previous state or mark as READY if this was initialization
-			initializationState = (previousState == STATE_INDEXING) ? STATE_READY : previousState;
+			setInitializationState((previousState == InitializationState.STATE_INDEXING) ? InitializationState.STATE_READY : previousState);
 		}
 	}
 
@@ -443,7 +483,7 @@ public class WorkspaceModel {
 	 * @param sync if true, indexing happens on calling thread (blocks); if false, runs in background
 	 */
 	public void startIndexing(boolean sync) {
-		if (initializationState != STATE_LOADING_CACHE) {
+		if (initializationState != InitializationState.STATE_LOADING_CACHE) {
 			LOG.warn("Cannot start indexing - expected LOADING_CACHE state but was: {}", initializationState);
 			return;
 		}
@@ -451,23 +491,23 @@ public class WorkspaceModel {
 		if (sync) {
 			LOG.info("Starting synchronous indexing with binding resolution");
 			try {
-				initializationState = STATE_INDEXING;
+				setInitializationState(InitializationState.STATE_INDEXING);
 				indexAllProjectsWithBindings();
 			} catch (Exception e) {
 				LOG.error("Synchronous indexing failed", e);
 			} finally {
-				initializationState = STATE_READY;
+				setInitializationState(InitializationState.STATE_READY);
 			}
 		} else {
 			LOG.info("Starting background indexing with binding resolution");
 			backgroundExecutor.submit(() -> {
 				try {
-					initializationState = STATE_INDEXING;
+					setInitializationState(InitializationState.STATE_INDEXING);
 					indexAllProjectsWithBindings();
 				} catch (Exception e) {
 					LOG.error("Background indexing failed", e);
 				} finally {
-					initializationState = STATE_READY;
+					setInitializationState(InitializationState.STATE_READY);
 				}
 			});
 		}
@@ -606,6 +646,33 @@ public class WorkspaceModel {
 
 		LOG.debug("Indexed file with bindings: {} ({} problems)",
 				javaFile, cu.getProblems() != null ? cu.getProblems().length : 0);
+	}
+
+	/**
+	 * Index a single project asynchronously in the background.
+	 * Changes initialization state to INDEXING while indexing,
+	 * then back to READY when complete.
+	 *
+	 * @param projectName the project name
+	 */
+	public void indexProjectAsync(String projectName) {
+		int previousState = initializationState;
+		setInitializationState(InitializationState.STATE_INDEXING);
+
+		backgroundExecutor.submit(() -> {
+			try {
+				indexProject(projectName);
+			} catch (Exception e) {
+				LOG.error("Background indexing failed for project: {}", projectName, e);
+			} finally {
+				// Restore to READY (or previous state if it wasn't READY)
+				setInitializationState(
+					previousState == InitializationState.STATE_READY || previousState == InitializationState.STATE_INDEXING
+						? InitializationState.STATE_READY
+						: previousState
+				);
+			}
+		});
 	}
 
 	/**
@@ -754,5 +821,71 @@ public class WorkspaceModel {
 		// Save index before shutdown
 		indexCache.save();
 		classpathDiscovery.shutdown();
+	}
+
+	/**
+	 * Add a listener for workspace model changes.
+	 *
+	 * @param listener the listener to add
+	 */
+	public void addListener(WorkspaceModelListener listener) {
+		if (listener != null) {
+			listeners.add(listener);
+		}
+	}
+
+	/**
+	 * Remove a listener for workspace model changes.
+	 *
+	 * @param listener the listener to remove
+	 */
+	public void removeListener(WorkspaceModelListener listener) {
+		listeners.remove(listener);
+	}
+
+	/**
+	 * Notify listeners of initialization state change.
+	 *
+	 * @param oldState the old state
+	 * @param newState the new state
+	 */
+	private void notifyInitializationStateChanged(int oldState, int newState) {
+		for (WorkspaceModelListener listener : listeners) {
+			try {
+				listener.initializationStateChanged(oldState, newState);
+			} catch (Exception e) {
+				LOG.error("Error notifying listener of initialization state change", e);
+			}
+		}
+	}
+
+	/**
+	 * Notify listeners that a project was added.
+	 *
+	 * @param project the project that was added
+	 */
+	private void notifyProjectAdded(WorkspaceProject project) {
+		for (WorkspaceModelListener listener : listeners) {
+			try {
+				listener.projectAdded(project);
+			} catch (Exception e) {
+				LOG.error("Error notifying listener of project addition", e);
+			}
+		}
+	}
+
+	/**
+	 * Notify listeners that a project was removed.
+	 *
+	 * @param project the project that was removed
+	 */
+	private void notifyProjectRemoved(WorkspaceProject project) {
+		for (WorkspaceModelListener listener : listeners) {
+			try {
+				listener.projectRemoved(project);
+			} catch (Exception e) {
+				LOG.error("Error notifying listener of project removal", e);
+			}
+		}
 	}
 }

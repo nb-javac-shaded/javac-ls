@@ -19,7 +19,10 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.MessageConsumer;
 import org.jboss.tools.javac.ls.api.JavacLSClient;
 import org.jboss.tools.javac.ls.api.SocketLauncher;
+import org.jboss.tools.javac.ls.server.event.EventManager;
 import org.jboss.tools.javac.ls.server.model.WorkspaceModel;
+import org.jboss.tools.javac.ls.server.model.WorkspaceModelListener;
+import org.jboss.tools.javac.ls.server.model.WorkspaceProject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,6 +64,7 @@ public class JavacLsServerLauncher {
 	protected String portString;
 	private WorkspaceModel workspaceModel;
 	private InstanceRegistry instanceRegistry;
+	private WorkspaceModelListener workspaceListener;
 
 	public JavacLsServerLauncher(String portString) {
 		this.portString = portString;
@@ -97,6 +101,10 @@ public class JavacLsServerLauncher {
 		// Load workspace model (loads from cache only, no parsing)
 		workspaceModel = new WorkspaceModel(workspaceDir);
 		LOG.info("Loaded workspace model with {} projects", workspaceModel.getProjectCount());
+
+		// Register listener to broadcast workspace events to clients
+		workspaceListener = new WorkspaceEventBroadcaster();
+		workspaceModel.addListener(workspaceListener);
 
 		// Start indexing with binding resolution (sync or async based on flag)
 		workspaceModel.startIndexing(sync);
@@ -142,6 +150,22 @@ public class JavacLsServerLauncher {
 	}
 
 	/**
+	 * Index a project asynchronously in the background.
+	 * Changes initialization state to INDEXING while indexing, then back to READY.
+	 *
+	 * @param projectName the name of the project to index
+	 */
+	public void indexProjectAsync(String projectName) {
+		if (workspaceModel == null) {
+			LOG.warn("Cannot index project - workspace not initialized");
+			return;
+		}
+
+		LOG.info("Starting background indexing for project: {}", projectName);
+		workspaceModel.indexProjectAsync(projectName);
+	}
+
+	/**
 	 * Wait for workspace to reach READY state.
 	 * Polls the initialization state and blocks until READY.
 	 */
@@ -182,6 +206,11 @@ public class JavacLsServerLauncher {
 	public void shutdown() {
 		LOG.info("Shutting down server");
 
+		// Unregister workspace listener
+		if (workspaceModel != null && workspaceListener != null) {
+			workspaceModel.removeListener(workspaceListener);
+		}
+
 		// Unregister this instance from the registry
 		if (instanceRegistry != null) {
 			instanceRegistry.unregister();
@@ -196,6 +225,30 @@ public class JavacLsServerLauncher {
 			} catch (IOException e) {
 				LOG.error("Error closing server socket", e);
 			}
+		}
+	}
+
+	/**
+	 * Workspace listener that broadcasts events to all connected clients.
+	 */
+	private class WorkspaceEventBroadcaster implements WorkspaceModelListener {
+
+		@Override
+		public void initializationStateChanged(int oldState, int newState) {
+			LOG.debug("Broadcasting initialization state change: {} -> {}", oldState, newState);
+			EventManager.fireInitializationStateChanged(getClients(), newState);
+		}
+
+		@Override
+		public void projectAdded(WorkspaceProject project) {
+			LOG.debug("Broadcasting project added: {}", project.getName());
+			EventManager.fireProjectAdded(getClients(), project.getName(), project.getPath());
+		}
+
+		@Override
+		public void projectRemoved(WorkspaceProject project) {
+			LOG.debug("Broadcasting project removed: {}", project.getName());
+			EventManager.fireProjectRemoved(getClients(), project.getName(), project.getPath());
 		}
 	}
 
