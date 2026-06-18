@@ -116,4 +116,34 @@ public class MatchLocatorTest {
         // Implementation may return 0 matches for invalid source
         assertTrue(collectedMatches.size() >= 0);
     }
+
+    @Test
+    public void testFieldDeclarationMatching() {
+        Path file = Paths.get("/test/Container.java");
+        String source = """
+            package com.example;
+
+            public class Container {
+                private int value;
+
+                public Container(int initialValue) {
+                    this.value = initialValue;
+                }
+            }
+            """;
+
+        org.jboss.tools.javac.ls.search.pattern.FieldPattern pattern =
+            new org.jboss.tools.javac.ls.search.pattern.FieldPattern(
+                "value", null, null,
+                org.jboss.tools.javac.ls.search.pattern.FieldPattern.SearchFor.ALL_OCCURRENCES);
+
+        matchLocator.locateMatches(file, source, pattern, collectedMatches::add);
+
+        // Should find at least 1 field declaration (Container.value)
+        long declarations = collectedMatches.stream()
+            .filter(m -> m.getKind() == MatchKind.FIELD_DECLARATION)
+            .count();
+
+        assertTrue("Should find field declaration for 'value'", declarations > 0);
+    }
 }

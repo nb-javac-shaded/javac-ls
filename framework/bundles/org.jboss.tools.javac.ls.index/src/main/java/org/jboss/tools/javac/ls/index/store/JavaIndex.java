@@ -319,6 +319,13 @@ public class JavaIndex {
 		return result;
 	}
 
+	/**
+	 * Get all fields in the index.
+	 */
+	public Map<String, FieldDeclarationEntry> getFields() {
+		return Collections.unmodifiableMap(fields);
+	}
+
 	// ===== Listener Management =====
 
 	public void addIndexChangeListener(IndexChangeListener listener) {

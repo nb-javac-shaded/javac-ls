@@ -95,8 +95,17 @@ public class SearchEngine {
             // Find files that reference or declare methods with this name
             addFilesFromReferences(index.findNameUsages(searchString), candidates);
         } else if (pattern instanceof FieldPattern) {
-            // Find files that reference or declare fields with this name
+            // Find files that reference fields with this name
             addFilesFromReferences(index.findNameUsages(searchString), candidates);
+
+            // Also find files that declare fields with this name
+            for (FieldDeclarationEntry field : index.getFields().values()) {
+                if (field.getFieldName().equals(searchString)) {
+                    if (field.getLocation() != null && field.getLocation().getFile() != null) {
+                        candidates.add(field.getLocation().getFile());
+                    }
+                }
+            }
         } else if (pattern instanceof ConstructorPattern) {
             // Find files that reference this constructor (by type name)
             addFilesFromReferences(index.findTypeUsages(searchString), candidates);

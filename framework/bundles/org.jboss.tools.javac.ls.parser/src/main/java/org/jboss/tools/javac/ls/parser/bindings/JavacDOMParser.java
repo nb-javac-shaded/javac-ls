@@ -19,8 +19,10 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.CharBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +33,7 @@ import org.jboss.tools.javac.ls.parser.problem.internal.JavacProblem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import shaded.com.sun.source.tree.CompilationUnitTree;
 import shaded.com.sun.source.util.JavacTask;
 import shaded.com.sun.tools.javac.api.JavacTool;
 import shaded.com.sun.tools.javac.file.JavacFileManager;
@@ -497,6 +500,200 @@ public class JavacDOMParser {
 	private static boolean noCommentAt(List<Comment> comments, int pos) {
 		return comments.stream()
 				.allMatch(other -> pos < other.getStartPosition() || pos >= other.getStartPosition() + other.getLength());
+	}
+
+	/**
+	 * Parse multiple Java source files in a single batch, sharing a common Context.
+	 * This dramatically reduces memory overhead by sharing symbol tables and type bindings
+	 * across all files in the batch.
+	 *
+	 * @param sourceFiles map of file paths to source content
+	 * @param classpath list of classpath entries (directories or JARs), or null for system classpath only
+	 * @param apiLevel AST API level (e.g., AST.JLS21)
+	 * @param compilerOptions compiler options map (source level, compliance, etc.)
+	 * @param resolveBindings if true, performs full type resolution; if false, only parses structure
+	 * @return map of file paths to CompilationUnits
+	 */
+	public Map<String, CompilationUnit> parseBatch(
+			Map<String, String> sourceFiles,
+			List<File> classpath,
+			int apiLevel,
+			Map<String, String> compilerOptions,
+			boolean resolveBindings) {
+
+		if (sourceFiles == null || sourceFiles.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		if (compilerOptions == null) {
+			compilerOptions = getDefaultCompilerOptions();
+		}
+
+		Map<String, CompilationUnit> results = new LinkedHashMap<>();
+		Context context = new Context();
+
+		try {
+			// Set up shared Names table (for caching identifiers)
+			Names names = new Names(context) {
+				@Override
+				public void dispose() {
+					// Keep names cached for reuse across files
+				}
+			};
+			context.put(Names.namesKey, names);
+
+			// Pre-register file manager
+			JavacFileManager.preRegister(context);
+
+			// Create diagnostic listener that handles multiple files
+			final Map<String, CompilationUnit> fileNameToUnit = new HashMap<>();
+			final Map<JavaFileObject, CompilationUnit> filesToUnits = new HashMap<>();
+			DiagnosticListener<JavaFileObject> diagnosticListener = createDiagnosticListener(filesToUnits, context, compilerOptions);
+			context.put(DiagnosticListener.class, diagnosticListener);
+
+			// Configure javac options once for all files
+			Options javacOptions = Options.instance(context);
+			configureJavacOptions(javacOptions, compilerOptions, resolveBindings);
+
+			// Get file manager from context
+			JavacFileManager fileManager = (JavacFileManager) context.get(JavaFileManager.class);
+
+			// Configure classpath if provided
+			if (classpath != null && !classpath.isEmpty()) {
+				try {
+					fileManager.setLocation(StandardLocation.CLASS_PATH, classpath);
+				} catch (IOException ex) {
+					LOG.error("Failed to set classpath", ex);
+				}
+			}
+
+			// Create virtual file objects for ALL source files
+			List<JavaFileObject> fileObjects = new ArrayList<>();
+			AST ast = createAST(compilerOptions, apiLevel, context);
+
+			for (Map.Entry<String, String> entry : sourceFiles.entrySet()) {
+				String fileName = entry.getKey();
+				String sourceContent = entry.getValue();
+
+				JavaFileObject fileObject = new VirtualSourceFile(fileName, sourceContent);
+				fileManager.cache(fileObject, CharBuffer.wrap(sourceContent));
+				fileObjects.add(fileObject);
+
+				// Pre-create CompilationUnit for this file
+				CompilationUnit cu = ast.newCompilationUnit();
+				filesToUnits.put(fileObject, cu);
+				fileNameToUnit.put(fileName, cu);  // Also store by file name for reliable lookup
+				results.put(fileName, cu);
+			}
+
+			// Create compiler task with ALL files at once (shared Context!)
+			var compiler = ToolProvider.getSystemJavaCompiler();
+			JavacTask task = ((JavacTool) compiler).getTask(
+				null,           // out
+				fileManager,    // file manager
+				null,           // diagnostic listener already in context
+				List.of(),      // options already set in context
+				List.of(),      // classes to compile (none)
+				fileObjects,    // ALL source files
+				context         // SHARED context!
+			);
+
+			// Configure javac to keep comments and positions
+			var javac = shaded.com.sun.tools.javac.main.JavaCompiler.instance(context);
+			javac.keepComments = javac.genEndPos = javac.lineDebugInfo = true;
+
+			// Parse all files in single call - they share symbol tables!
+			try {
+				Iterable<? extends CompilationUnitTree> units = task.parse();
+
+				// After parsing, disable extra features
+				javac.keepComments = javac.genEndPos = javac.lineDebugInfo = false;
+
+				LOG.debug("Batch parsing complete for {} files", sourceFiles.size());
+
+				// Collect all JCCompilationUnits for binding resolution
+				List<JCCompilationUnit> javacUnits = new ArrayList<>();
+				for (CompilationUnitTree tree : units) {
+					javacUnits.add((JCCompilationUnit) tree);
+				}
+
+				// If resolving bindings, analyze all files together
+				if (resolveBindings) {
+					try {
+						// Fully consume analyze iterator to ensure diagnostics are reported
+						var analyzeResults = task.analyze();
+						for (var element : analyzeResults) {
+							// Just consume the results
+						}
+						LOG.debug("Batch analysis complete");
+
+						// Create and attach JavacBindingResolver for ALL units
+						JavacBindingResolver resolver = new JavacBindingResolver(task, context, null, javacUnits);
+						resolver.isRecoveringBindings = true;
+						JavacDomPackageAccessor.setBindingResolver(ast, resolver);
+						LOG.debug("Binding resolver attached for batch of {} files", javacUnits.size());
+					} catch (IOException ex) {
+						LOG.error("Failed to analyze batch", ex);
+					}
+				}
+
+				// Convert each JCCompilationUnit to DOM
+				for (JCCompilationUnit javacUnit : javacUnits) {
+					JavaFileObject fileObj = javacUnit.sourcefile;
+					String fileObjName = fileObj.getName();
+
+					// Find fileName key that matches this file object
+					// The file object name might have path normalization differences
+					String matchingKey = null;
+					for (String key : sourceFiles.keySet()) {
+						if (fileObjName.endsWith(key) || key.endsWith(fileObjName) || fileObjName.replace("//", "/").equals(key)) {
+							matchingKey = key;
+							break;
+						}
+					}
+
+					if (matchingKey == null) {
+						LOG.warn("No source key found for file object: {}", fileObjName);
+						continue;
+					}
+
+					// Find corresponding pre-created CompilationUnit
+					CompilationUnit result = fileNameToUnit.get(matchingKey);
+					if (result == null) {
+						LOG.warn("No CompilationUnit found for file: {}", matchingKey);
+						continue;
+					}
+
+					// Get original source content
+					String sourceContent = sourceFiles.get(matchingKey);
+					if (sourceContent == null) {
+						LOG.warn("No source content found for file: {}", matchingKey);
+						continue;
+					}
+
+					// Convert javac tree to DOM
+					boolean docEnabled = JavaCoreConstants.ENABLED.equals(compilerOptions.get(JavaCoreConstants.COMPILER_DOC_COMMENT_SUPPORT));
+					JavacConverter converter = new JavacConverter(ast, javacUnit, context, sourceContent, docEnabled, -1);
+					converter.populateCompilationUnit(result, javacUnit);
+
+					// Handle comments
+					List<Comment> comments = new ArrayList<>();
+					comments.addAll(converter.notAttachedComments);
+					Scanner javacScanner = scanForComments(comments, result, context, sourceContent, converter);
+					addCommentsToUnit(comments, result);
+
+					LOG.debug("Converted file to DOM: {} ({} problems)",
+						matchingKey, result.getProblems() != null ? result.getProblems().length : 0);
+				}
+
+			} catch (IOException ex) {
+				LOG.error("Failed to parse batch", ex);
+			}
+
+		} finally {
+			// Context will be garbage collected
+		}
+
+		return results;
 	}
 
 	/**

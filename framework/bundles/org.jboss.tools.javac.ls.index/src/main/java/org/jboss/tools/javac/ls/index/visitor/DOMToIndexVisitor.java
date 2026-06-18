@@ -350,6 +350,10 @@ public class DOMToIndexVisitor extends ASTVisitor {
 				entry.setLocation(createLocation(fragment));
 
 				index.addField(entry);
+
+				// Also add as a name reference so search can find files declaring this field
+				ReferenceEntry nameRef = new ReferenceEntry(entry.getLocation(), ReferenceKind.NAME_REFERENCE);
+				index.addNameReference(fragment.getName().getIdentifier(), nameRef);
 			}
 		}
 		return true;

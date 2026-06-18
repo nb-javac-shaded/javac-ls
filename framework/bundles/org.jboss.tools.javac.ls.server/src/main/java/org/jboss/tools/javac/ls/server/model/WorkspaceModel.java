@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -582,19 +583,36 @@ public class WorkspaceModel {
 			}
 		}
 
-		// Parse and index each file with bindings
+		// Parse and index files in batches (for memory efficiency)
 		int filesIndexed = 0;
 
 		indexCache.lockWrite();
 		try {
 			JavaIndex index = indexCache.getIndex();
 
-			for (Path javaFile : javaFiles) {
+			// Create package-aware batches
+			PackageAwareBatcher batcher = new PackageAwareBatcher();
+			List<List<Path>> batches = batcher.createBatches(javaFiles);
+
+			LOG.info("Created {} batches for {} files", batches.size(), javaFiles.size());
+
+			// Process each batch
+			for (List<Path> batch : batches) {
 				try {
-					indexFileWithBindings(javaFile, classpath, index);
-					filesIndexed++;
+					int batchIndexed = indexBatchWithBindings(batch, classpath, index);
+					filesIndexed += batchIndexed;
 				} catch (Exception e) {
-					LOG.error("Failed to index file with bindings: {}", javaFile, e);
+					LOG.error("Failed to index batch of {} files, will try individually", batch.size(), e);
+
+					// Fallback: try each file individually
+					for (Path javaFile : batch) {
+						try {
+							indexFileWithBindings(javaFile, classpath, index);
+							filesIndexed++;
+						} catch (Exception e2) {
+							LOG.error("Failed to index file with bindings: {}", javaFile, e2);
+						}
+					}
 				}
 			}
 
@@ -609,6 +627,82 @@ public class WorkspaceModel {
 				filesIndexed, projectName, duration);
 
 		return filesIndexed;
+	}
+
+	/**
+	 * Index a batch of Java files with full binding resolution in a single parse.
+	 * This dramatically reduces memory usage by sharing symbol tables across all files.
+	 *
+	 * @param javaFiles list of Java files to index
+	 * @param classpath the classpath for parsing
+	 * @param index the index to populate
+	 * @return number of files successfully indexed
+	 */
+	private int indexBatchWithBindings(List<Path> javaFiles, List<File> classpath, JavaIndex index) {
+		if (javaFiles.isEmpty()) {
+			return 0;
+		}
+
+		LOG.debug("Batch indexing {} files with shared context", javaFiles.size());
+
+		// Read all files into memory
+		Map<String, String> sourceFiles = new LinkedHashMap<>();
+		for (Path javaFile : javaFiles) {
+			try {
+				String source = Files.readString(javaFile);
+				sourceFiles.put(javaFile.toString(), source);
+			} catch (IOException e) {
+				LOG.error("Failed to read file: {}", javaFile, e);
+			}
+		}
+
+		if (sourceFiles.isEmpty()) {
+			return 0;
+		}
+
+		// Parse all files in a single batch (shared Context!)
+		JavacDOMParser parser = new JavacDOMParser();
+		Map<String, CompilationUnit> units = parser.parseBatch(
+			sourceFiles,
+			classpath,
+			AST.JLS21,
+			null,  // compiler options
+			true   // resolve bindings
+		);
+
+		// Index each parsed compilation unit
+		int indexed = 0;
+		for (Map.Entry<String, CompilationUnit> entry : units.entrySet()) {
+			String fileName = entry.getKey();
+			CompilationUnit cu = entry.getValue();
+
+			if (cu == null) {
+				LOG.warn("Failed to parse file in batch: {}", fileName);
+				continue;
+			}
+
+			try {
+				Path javaFile = Path.of(fileName);
+
+				// Remove old declarations for this file (incremental update)
+				index.removeFile(javaFile);
+
+				// Visit AST and populate index
+				DOMToIndexVisitor visitor = new DOMToIndexVisitor(index, javaFile);
+				cu.accept(visitor);
+				visitor.finishIndexing();
+
+				indexed++;
+
+				LOG.debug("Indexed file from batch: {} ({} problems)",
+					javaFile, cu.getProblems() != null ? cu.getProblems().length : 0);
+			} catch (Exception e) {
+				LOG.error("Failed to index compilation unit: {}", fileName, e);
+			}
+		}
+
+		LOG.debug("Batch indexed {}/{} files successfully", indexed, javaFiles.size());
+		return indexed;
 	}
 
 	/**

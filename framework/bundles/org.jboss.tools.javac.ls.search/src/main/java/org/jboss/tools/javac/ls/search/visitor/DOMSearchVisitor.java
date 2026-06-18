@@ -161,6 +161,17 @@ public class DOMSearchVisitor extends ASTVisitor {
         // SimpleName can be a field reference (if not already caught by FieldAccess)
         if (pattern instanceof FieldPattern) {
             FieldPattern fieldPattern = (FieldPattern) pattern;
+
+            // Skip if this SimpleName is the name of a field declaration
+            // (it was already handled by visit(FieldDeclaration))
+            if (node.getParent() instanceof VariableDeclarationFragment) {
+                VariableDeclarationFragment fragment = (VariableDeclarationFragment) node.getParent();
+                if (fragment.getParent() instanceof FieldDeclaration) {
+                    // This is a field declaration name, already handled
+                    return true;
+                }
+            }
+
             if (fieldPattern.matches(node)) {
                 MatchKind kind = MatchKind.FIELD_REFERENCE;
                 matchingNodes.addMatch(node, kind);
