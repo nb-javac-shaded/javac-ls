@@ -396,4 +396,108 @@ public class WorkspaceModelIndexIntegrationTest {
 			indexCache.unlockRead();
 		}
 	}
+
+	@Test
+	public void testFileChangeUpdatesIndex() throws IOException {
+		// Create project with a Java file
+		File projectDir = new File(tempDir, "test-project");
+		File srcDir = new File(projectDir, "src");
+		assertTrue("Should create dirs", srcDir.mkdirs());
+
+		File javaFile = new File(srcDir, "Test.java");
+		String originalSource = "package test; public class Test { private int oldField; }";
+		Files.write(javaFile.toPath(), originalSource.getBytes(StandardCharsets.UTF_8));
+
+		model.addProject("test-project", projectDir.getAbsolutePath());
+		model.indexProject("test-project");
+
+		// Verify original field
+		JavaIndexCache indexCache = model.getIndexCache();
+		indexCache.lockRead();
+		try {
+			JavaIndex index = indexCache.getIndex();
+			Collection<FieldDeclarationEntry> fields = index.findFieldsInType("test.Test");
+			assertEquals("Should have 1 field", 1, fields.size());
+			assertEquals("oldField", fields.iterator().next().getFieldName());
+		} finally {
+			indexCache.unlockRead();
+		}
+
+		// Modify the file
+		String modifiedSource = "package test; public class Test { private String newField; }";
+		Files.write(javaFile.toPath(), modifiedSource.getBytes(StandardCharsets.UTF_8));
+
+		// Reparse the changed file
+		model.reparseFiles("test-project", Arrays.asList(javaFile.toPath()));
+
+		// Verify new field exists and old field is gone
+		indexCache.lockRead();
+		try {
+			JavaIndex index = indexCache.getIndex();
+			Collection<FieldDeclarationEntry> fields = index.findFieldsInType("test.Test");
+			assertEquals("Should have 1 field after change", 1, fields.size());
+			assertEquals("newField", fields.iterator().next().getFieldName());
+		} finally {
+			indexCache.unlockRead();
+		}
+
+		// Verify index was marked dirty
+		assertTrue("Index should be dirty after file change", indexCache.isDirty());
+	}
+
+	@Test
+	public void testRebatchingAfterMultipleFileChanges() throws IOException {
+		// Create project with multiple Java files
+		File projectDir = new File(tempDir, "test-project");
+		File srcDir = new File(projectDir, "src");
+		assertTrue("Should create dirs", srcDir.mkdirs());
+
+		// Create 25 Java files (more than rebatch threshold of 20)
+		File[] javaFiles = new File[25];
+		for (int i = 0; i < 25; i++) {
+			javaFiles[i] = new File(srcDir, "Test" + i + ".java");
+			String source = "package test; public class Test" + i + " { private int field" + i + "; }";
+			Files.write(javaFiles[i].toPath(), source.getBytes(StandardCharsets.UTF_8));
+		}
+
+		model.addProject("test-project", projectDir.getAbsolutePath());
+		model.indexProject("test-project");
+
+		JavaIndexCache indexCache = model.getIndexCache();
+		assertEquals("Should have 0 individually parsed files initially",
+				0, indexCache.getIndividuallyParsedCount());
+
+		// Simulate 19 file changes (below rebatch threshold)
+		for (int i = 0; i < 19; i++) {
+			String modifiedSource = "package test; public class Test" + i + " { private String modified" + i + "; }";
+			Files.write(javaFiles[i].toPath(), modifiedSource.getBytes(StandardCharsets.UTF_8));
+			model.reparseFiles("test-project", Arrays.asList(javaFiles[i].toPath()));
+		}
+
+		// Should have 19 individually-parsed files, no rebatching yet
+		assertEquals("Should have 19 individually parsed files",
+				19, indexCache.getIndividuallyParsedCount());
+
+		// Trigger rebatching by changing the 20th file
+		String modifiedSource = "package test; public class Test19 { private String modified19; }";
+		Files.write(javaFiles[19].toPath(), modifiedSource.getBytes(StandardCharsets.UTF_8));
+		model.reparseFiles("test-project", Arrays.asList(javaFiles[19].toPath()));
+
+		// After rebatching, the tracking set should be cleared
+		assertEquals("Should have 0 individually parsed files after rebatch",
+				0, indexCache.getIndividuallyParsedCount());
+
+		// Verify all fields were updated correctly
+		indexCache.lockRead();
+		try {
+			JavaIndex index = indexCache.getIndex();
+			for (int i = 0; i < 20; i++) {
+				Collection<FieldDeclarationEntry> fields = index.findFieldsInType("test.Test" + i);
+				assertEquals("Test" + i + " should have 1 field", 1, fields.size());
+				assertEquals("modified" + i, fields.iterator().next().getFieldName());
+			}
+		} finally {
+			indexCache.unlockRead();
+		}
+	}
 }

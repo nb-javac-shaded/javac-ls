@@ -12,6 +12,8 @@ package org.jboss.tools.javac.ls.server.index;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -30,10 +32,24 @@ public class JavaIndexCache {
 
 	private static final Logger LOG = LoggerFactory.getLogger(JavaIndexCache.class);
 
+	/**
+	 * Threshold for triggering rebatching of individually-parsed files.
+	 * When this many files have been parsed individually (due to changes),
+	 * we rebatch them together to consolidate memory usage.
+	 */
+	private static final int REBATCH_THRESHOLD = 20;
+
 	private final JavaIndex index;
 	private final JsonIndexPersistence persistence;
 	private final ReadWriteLock lock;
 	private boolean dirty;
+
+	/**
+	 * Tracks files that have been parsed individually (not as part of a batch).
+	 * Once this set reaches REBATCH_THRESHOLD, these files are re-parsed together
+	 * in a batch to consolidate memory and allow GC of individual parse Contexts.
+	 */
+	private final Set<Path> individuallyParsedFiles;
 
 	/**
 	 * Create a new index cache with the given storage directory.
@@ -44,6 +60,7 @@ public class JavaIndexCache {
 		this.persistence = new JsonIndexPersistence(baseDirectory);
 		this.lock = new ReentrantReadWriteLock();
 		this.dirty = false;
+		this.individuallyParsedFiles = new HashSet<>();
 	}
 
 	/**
@@ -236,6 +253,75 @@ public class JavaIndexCache {
 				index.getFieldCount(),
 				dirty
 			);
+		} finally {
+			unlockRead();
+		}
+	}
+
+	/**
+	 * Track that a file was parsed individually (not as part of a batch).
+	 * This is used to trigger rebatching when too many files have been
+	 * parsed individually to consolidate memory usage.
+	 *
+	 * @param file the file that was parsed individually
+	 */
+	public void trackIndividuallyParsedFile(Path file) {
+		lockWrite();
+		try {
+			individuallyParsedFiles.add(file);
+			LOG.debug("Tracked individually-parsed file: {} (total: {})",
+					file, individuallyParsedFiles.size());
+		} finally {
+			unlockWrite();
+		}
+	}
+
+	/**
+	 * Check if rebatching threshold has been reached.
+	 *
+	 * @return true if we should rebatch individually-parsed files
+	 */
+	public boolean shouldRebatch() {
+		lockRead();
+		try {
+			return individuallyParsedFiles.size() >= REBATCH_THRESHOLD;
+		} finally {
+			unlockRead();
+		}
+	}
+
+	/**
+	 * Get the set of files that have been parsed individually.
+	 * Caller should hold appropriate locks.
+	 *
+	 * @return set of individually-parsed files (for rebatching)
+	 */
+	public Set<Path> getIndividuallyParsedFiles() {
+		return individuallyParsedFiles;
+	}
+
+	/**
+	 * Clear the tracking set of individually-parsed files.
+	 * Should be called after rebatching is complete.
+	 */
+	public void clearIndividuallyParsedFiles() {
+		lockWrite();
+		try {
+			int count = individuallyParsedFiles.size();
+			individuallyParsedFiles.clear();
+			LOG.debug("Cleared {} individually-parsed files after rebatching", count);
+		} finally {
+			unlockWrite();
+		}
+	}
+
+	/**
+	 * Get the count of individually-parsed files awaiting rebatch.
+	 */
+	public int getIndividuallyParsedCount() {
+		lockRead();
+		try {
+			return individuallyParsedFiles.size();
 		} finally {
 			unlockRead();
 		}

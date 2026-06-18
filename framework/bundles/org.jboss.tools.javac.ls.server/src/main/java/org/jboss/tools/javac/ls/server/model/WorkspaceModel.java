@@ -24,9 +24,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collection;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -67,6 +69,8 @@ public class WorkspaceModel {
 	private final JavaIndexCache indexCache;
 	private final DOMCache domCache;
 	private final ExecutorService backgroundExecutor;
+	private final ScheduledExecutorService periodicScanExecutor;
+	private final Set<String> projectsCurrentlyScanning;
 	private final List<WorkspaceModelListener> listeners;
 	private volatile int initializationState = InitializationState.STATE_NOT_STARTED;
 
@@ -85,11 +89,20 @@ public class WorkspaceModel {
 			t.setDaemon(true);
 			return t;
 		});
+		this.periodicScanExecutor = Executors.newScheduledThreadPool(1, r -> {
+			Thread t = new Thread(r, "WorkspaceModel-PeriodicScan");
+			t.setDaemon(true);
+			return t;
+		});
+		this.projectsCurrentlyScanning = Collections.synchronizedSet(new HashSet<>());
 
 		// Load cached data
 		setInitializationState(InitializationState.STATE_LOADING_CACHE);
 		load();
 		loadIndex();
+
+		// Start periodic file change scanner (every 30 seconds)
+		startPeriodicFileChangeScanner();
 
 		// Cache loaded - stay in LOADING_CACHE state
 		// Will transition to INDEXING when background indexing starts,
@@ -839,6 +852,200 @@ public class WorkspaceModel {
 	}
 
 	/**
+	 * Rebatch files that were parsed individually.
+	 * This consolidates memory by re-parsing multiple individually-parsed files
+	 * together in a single batch, allowing the old individual parse Contexts to be GC'd.
+	 *
+	 * @param projectName the project name
+	 */
+	private void rebatchIndividuallyParsedFiles(String projectName) {
+		WorkspaceProject project = projects.get(projectName);
+		if (project == null) {
+			LOG.warn("Cannot rebatch for unknown project: {}", projectName);
+			return;
+		}
+
+		indexCache.lockWrite();
+		try {
+			// Get the files that need rebatching
+			Set<Path> filesToRebatch = new HashSet<>(indexCache.getIndividuallyParsedFiles());
+			if (filesToRebatch.isEmpty()) {
+				return;
+			}
+
+			LOG.info("Rebatching {} individually-parsed files", filesToRebatch.size());
+
+			// Get classpath
+			ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+			List<File> classpath = new ArrayList<>();
+			for (IJavacClasspathEntry entry : classpathEntries) {
+				if (entry.getPath() != null) {
+					classpath.add(new File(entry.getPath()));
+				}
+			}
+
+			// Re-parse all files together as a batch
+			JavaIndex index = indexCache.getIndex();
+			int rebatched = indexBatchWithBindings(new ArrayList<>(filesToRebatch), classpath, index);
+
+			// Clear the tracking set
+			indexCache.clearIndividuallyParsedFiles();
+
+			LOG.info("Rebatched {} files successfully", rebatched);
+		} finally {
+			indexCache.unlockWrite();
+		}
+	}
+
+	/**
+	 * Reparse a collection of files and update the index.
+	 * Files are first removed from the index, then re-parsed with bindings,
+	 * and added back to the index. Uses the rebatching strategy to manage memory.
+	 *
+	 * @param projectName the project name
+	 * @param files the files to reparse
+	 */
+	public void reparseFiles(String projectName, Collection<Path> files) {
+		if (files == null || files.isEmpty()) {
+			return;
+		}
+
+		WorkspaceProject project = projects.get(projectName);
+		if (project == null) {
+			LOG.warn("Cannot reparse files for unknown project: {}", projectName);
+			return;
+		}
+
+		LOG.debug("Reparsing {} files in project {}", files.size(), projectName);
+
+		// Get classpath for parsing
+		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+		List<File> classpath = new ArrayList<>();
+		for (IJavacClasspathEntry entry : classpathEntries) {
+			if (entry.getPath() != null) {
+				classpath.add(new File(entry.getPath()));
+			}
+		}
+
+		// Remove files from index and reparse them
+		indexCache.lockWrite();
+		try {
+			JavaIndex index = indexCache.getIndex();
+
+			// Remove old declarations
+			for (Path file : files) {
+				index.removeFile(file);
+			}
+
+			// Reparse files individually (for fast response)
+			for (Path file : files) {
+				indexFileWithBindings(file, classpath, index);
+				indexCache.trackIndividuallyParsedFile(file);
+			}
+
+			// Mark index as dirty
+			indexCache.markDirty();
+		} finally {
+			indexCache.unlockWrite();
+		}
+
+		// Check if we should rebatch to consolidate memory
+		if (indexCache.shouldRebatch()) {
+			LOG.info("Rebatch threshold reached ({} files), rebatching individually-parsed files",
+					indexCache.getIndividuallyParsedCount());
+			rebatchIndividuallyParsedFiles(projectName);
+		}
+	}
+
+	/**
+	 * Scan for files with changed timestamps and reparse them.
+	 * This method is non-blocking: if the project is already being scanned,
+	 * it returns immediately without waiting or blocking.
+	 *
+	 * IMPORTANT: This should be called before handling requests that depend on
+	 * up-to-date index data:
+	 * - Find references requests
+	 * - Diagnostics requests
+	 * - Code completion requests
+	 * - Hover/documentation requests
+	 *
+	 * @param projectName the project name
+	 * @return true if scan was performed, false if skipped (already scanning)
+	 */
+	public boolean scanAndReparseChangedFiles(String projectName) {
+		// Non-blocking check: skip if already scanning this project
+		if (!projectsCurrentlyScanning.add(projectName)) {
+			LOG.debug("Project {} is already being scanned, skipping", projectName);
+			return false;
+		}
+
+		try {
+			WorkspaceProject project = projects.get(projectName);
+			if (project == null) {
+				LOG.debug("Cannot scan unknown project: {}", projectName);
+				return false;
+			}
+
+			LOG.debug("Scanning project {} for changed files", projectName);
+
+			// Find all Java files in the project
+			List<Path> allJavaFiles = findJavaFiles(Paths.get(project.getPath()));
+			if (allJavaFiles.isEmpty()) {
+				return true;
+			}
+
+			// Check which files have changed since they were indexed
+			List<Path> changedFiles = new ArrayList<>();
+			indexCache.lockRead();
+			try {
+				JavaIndex index = indexCache.getIndex();
+				for (Path file : allJavaFiles) {
+					long fileTimestamp = file.toFile().lastModified();
+					long indexedTimestamp = index.getFileTimestamp(file);
+
+					// If file is newer than indexed version, it has changed
+					if (fileTimestamp > indexedTimestamp) {
+						changedFiles.add(file);
+					}
+				}
+			} finally {
+				indexCache.unlockRead();
+			}
+
+			if (!changedFiles.isEmpty()) {
+				LOG.info("Found {} changed files in project {}", changedFiles.size(), projectName);
+				reparseFiles(projectName, changedFiles);
+			} else {
+				LOG.debug("No changed files found in project {}", projectName);
+			}
+
+			return true;
+		} finally {
+			// Always remove from scanning set when done
+			projectsCurrentlyScanning.remove(projectName);
+		}
+	}
+
+	/**
+	 * Start the periodic file change scanner.
+	 * Scans all projects every 30 seconds for file changes.
+	 */
+	private void startPeriodicFileChangeScanner() {
+		periodicScanExecutor.scheduleWithFixedDelay(() -> {
+			try {
+				// Scan all projects for changed files
+				for (String projectName : projects.keySet()) {
+					scanAndReparseChangedFiles(projectName);
+				}
+			} catch (Exception e) {
+				LOG.error("Error during periodic file change scan", e);
+			}
+		}, 30, 30, TimeUnit.SECONDS); // Initial delay 30s, then every 30s
+
+		LOG.info("Started periodic file change scanner (every 30 seconds)");
+	}
+
+	/**
 	 * Index a single Java file.
 	 *
 	 * @param javaFile the Java file to index
@@ -898,6 +1105,19 @@ public class WorkspaceModel {
 	 */
 	public void shutdown() {
 		LOG.info("Shutting down workspace model");
+
+		// Shutdown periodic scan executor
+		periodicScanExecutor.shutdown();
+		try {
+			if (!periodicScanExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+				LOG.warn("Periodic scan executor did not terminate in time, forcing shutdown");
+				periodicScanExecutor.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			LOG.error("Interrupted while waiting for periodic scan executor to shut down", e);
+			periodicScanExecutor.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
 
 		// Shutdown background executor
 		backgroundExecutor.shutdown();

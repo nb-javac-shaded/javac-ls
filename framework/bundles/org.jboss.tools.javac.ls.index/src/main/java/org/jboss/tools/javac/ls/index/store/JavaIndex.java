@@ -112,10 +112,13 @@ public class JavaIndex {
 
 	/**
 	 * Track that a file declares certain types.
+	 * Records the file's current modification timestamp for change detection.
 	 */
 	public void trackFileDeclaredTypes(Path file, Set<String> declaredTypes) {
 		fileToDeclaredTypes.put(file, new HashSet<>(declaredTypes));
-		fileTimestamps.put(file, System.currentTimeMillis());
+		// Store the file's actual modification time for change detection
+		long timestamp = file.toFile().exists() ? file.toFile().lastModified() : System.currentTimeMillis();
+		fileTimestamps.put(file, timestamp);
 	}
 
 	/**
@@ -174,6 +177,16 @@ public class JavaIndex {
 	public Set<String> getFileDeclaredTypes(Path file) {
 		Set<String> types = fileToDeclaredTypes.get(file);
 		return types != null ? new HashSet<>(types) : null;
+	}
+
+	/**
+	 * Get the timestamp when a file was indexed.
+	 *
+	 * @param file the file path
+	 * @return timestamp in milliseconds, or 0 if file not indexed
+	 */
+	public long getFileTimestamp(Path file) {
+		return fileTimestamps.getOrDefault(file, 0L);
 	}
 
 	// ===== Query Methods =====
