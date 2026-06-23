@@ -44,25 +44,62 @@ public class JavacTextDocumentService implements TextDocumentService {
 	@Override
 	public void didOpen(DidOpenTextDocumentParams params) {
 		LOG.debug("didOpen: {}", params.getTextDocument().getUri());
-		// TODO: Track opened documents, trigger initial indexing/parsing
+		// NOTE: We do not track opened documents or maintain in-memory document state.
+		// This server reads all content directly from the filesystem and does not use
+		// the document content sent by the client. No action needed.
 	}
 
 	@Override
 	public void didChange(DidChangeTextDocumentParams params) {
 		LOG.debug("didChange: {}", params.getTextDocument().getUri());
-		// TODO: Update document content, re-parse, update diagnostics
+		// NOTE: We do not track document changes or maintain in-memory document state.
+		// This server reads all content directly from the filesystem and does not use
+		// the incremental changes sent by the client. No action needed.
 	}
 
 	@Override
 	public void didClose(DidCloseTextDocumentParams params) {
 		LOG.debug("didClose: {}", params.getTextDocument().getUri());
-		// TODO: Remove from tracked documents
+		// NOTE: We do not track opened/closed documents or maintain in-memory document state.
+		// This server reads all content directly from the filesystem. No action needed.
 	}
 
 	@Override
 	public void didSave(DidSaveTextDocumentParams params) {
-		LOG.debug("didSave: {}", params.getTextDocument().getUri());
-		// TODO: Trigger re-indexing after save
+		String uri = params.getTextDocument().getUri();
+		LOG.debug("didSave: {}", uri);
+
+		try {
+			// Convert URI to file path
+			String filePath = uriToFilePath(uri);
+
+			// Get workspace model
+			WorkspaceModel workspace = server.getLauncher().getWorkspaceModel();
+			if (workspace == null) {
+				LOG.warn("Workspace not initialized, cannot reparse saved file: {}", filePath);
+				return;
+			}
+
+			// Find which project this file belongs to
+			String projectName = findProjectForFile(workspace, filePath);
+			if (projectName == null) {
+				LOG.debug("File is not part of any workspace project: {}", filePath);
+				return;
+			}
+
+			LOG.info("File saved, re-parsing: {} in project: {}", filePath, projectName);
+
+			// Re-parse the saved file
+			// This will:
+			// 1. Re-index the file with new content from disk
+			// 2. Extract updated diagnostics
+			// 3. Fire fileDiagnosticsChanged() which broadcasts to all clients
+			java.nio.file.Path path = java.nio.file.Paths.get(filePath);
+			workspace.reparseFiles(projectName, java.util.Collections.singletonList(path));
+
+		} catch (Exception e) {
+			LOG.error("Error handling didSave for {}: {}", uri, e.getMessage(), e);
+		}
 	}
 
 	/**
@@ -120,5 +157,18 @@ public class JavacTextDocumentService implements TextDocumentService {
 		RelatedFullDocumentDiagnosticReport report = new RelatedFullDocumentDiagnosticReport();
 		report.setItems(new ArrayList<>());
 		return new DocumentDiagnosticReport(report);
+	}
+
+	/**
+	 * Find which project contains the given file path.
+	 */
+	private String findProjectForFile(WorkspaceModel workspace, String filePath) {
+		for (String projectName : workspace.getProjectNames()) {
+			String projectPath = workspace.getProjectPath(projectName);
+			if (projectPath != null && filePath.startsWith(projectPath)) {
+				return projectName;
+			}
+		}
+		return null;
 	}
 }
