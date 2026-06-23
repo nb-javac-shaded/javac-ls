@@ -24,6 +24,7 @@ Require-Bundle: org.jboss.tools.javac.ls.api,
  org.mockito,
  org.assertj;bundle-version="2.1.0",
  javax.annotation;bundle-version="1.2.0",
- org.eclipse.lsp4j;bundle-version="1.0.0"
+ org.eclipse.lsp4j;bundle-version="1.0.0",
+ org.eclipse.lsp4j.jsonrpc;bundle-version="1.0.0"
 Export-Package: org.jboss.tools.javac.ls.server.util
 Bundle-Activator: org.jboss.tools.javac.ls.server.ServerTestActivator

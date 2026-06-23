@@ -1,0 +1,236 @@
+Signature-Version: 1.0
+SHA-256-Digest-Manifest-Main-Attributes: EK6RTL3tPrbTvQGVgF9LLIW331zl+
+ fMhpkkEm5X5ouo=
+SHA-256-Digest-Manifest: cMWBC3qWjm4f19eOh8HaXYvQzm57LfUUIWFkPKpNauU=
+Created-By: 1.8.0_162 (Oracle Corporation)
+
+Name: org/eclipse/lsp4j/jsonrpc/json/ConcurrentMessageProcessor.class
+SHA-256-Digest: FKEqbny/uGPGps4KrvNJp02gCZqB+umXT96ByD78OSQ=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/CollectionTypeAdapter$Fa
+ ctory.class
+SHA-256-Digest: EX95dWEyL+UtaDhcIpQAlbPzRJxoLF0ZOxXvjd9U4gc=
+
+Name: org/eclipse/lsp4j/jsonrpc/RemoteEndpoint$1.class
+SHA-256-Digest: +4tUU4luwEKEClkW8ZAvtt5PUH8avs9xloqJ3+NWYuY=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EitherTypeAdapter.class
+SHA-256-Digest: Av9rQgPTwy0wjao3cB07f5q+x0tsaYHgeJKewL8s5II=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/JsonElementTypeAdapter$F
+ actory.class
+SHA-256-Digest: pGxcfOHC35KTci8Bg4qkVWcebCK2uabWRi1W0uQlPyM=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/StreamMessageProducer.class
+SHA-256-Digest: XkLJSmnljVOuZ3PRKyMptlgX0AB2vLJuqYW6WXRwAsw=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/TypeUtils.class
+SHA-256-Digest: VOsbhqG/b44oAamxNRQjNg4jpavHHMt4s5h9OKK4Pko=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/ServiceEndpoints.class
+SHA-256-Digest: +e0vRcvRr6WBtj3wyQM1LMaUs5xjV3uRUEVBI6T0FFs=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/ConcurrentMessageProcessor$1.clas
+ s
+SHA-256-Digest: Kilm/pF1kZqV6NuHstWFOwaz6XACvnMUeGcH/ChALdg=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/Message.class
+SHA-256-Digest: r7G42ao1dlwo9VkWhhY7tOGmKzGUmPhpmle/olkwQ8I=
+
+Name: org/eclipse/lsp4j/jsonrpc/Launcher.class
+SHA-256-Digest: VIr5RRF1m8Zumk75ar9KiqhUocNIW84nzN2SSF9t2L4=
+
+Name: org/eclipse/lsp4j/jsonrpc/Launcher$2.class
+SHA-256-Digest: y2W73QmAXrDPwz5QAnHkFUvdoQjbSWPFlgAcVXFhri0=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/RequestMessage.class
+SHA-256-Digest: KTY6r1lcdYle/PHhLlH4N+SFMPapGiv2WmujFuHMHBk=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/TypeUtils$ParameterizedT
+ ypeImpl.class
+SHA-256-Digest: dMVrHkljTJOs6/0NfJB0qj78iPTfUiI8gBhO14MeoQY=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/NotificationMessage.class
+SHA-256-Digest: qHRc3LzzGI7tFagBGbv+eGXt7+6mviSa/ZkkolZmS1Q=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EnumTypeAdapter$Factory.
+ class
+SHA-256-Digest: ef5uitwNxdQbwdU9xTP0OnZoIlS/P09t5djcgxr2oK0=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/StreamMessageProducer$Headers.cla
+ ss
+SHA-256-Digest: r5DQUpWCznZO0MfwQ3rL94v/PMp89KGmV996hzLuhb8=
+
+Name: org/eclipse/lsp4j/jsonrpc/validation/ReflectiveMessageValidator.
+ class
+SHA-256-Digest: SJeGkFkKD9eYY/lJ42WSASTwb8ZCPB81QXA3nICsuQI=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/AnnotationUtil$MethodInfo.cla
+ ss
+SHA-256-Digest: kLXGAxuLK6cYA4fRTGWnYVGV0d7Sj5t+U22n4b4/YgU=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EnumTypeAdapter.class
+SHA-256-Digest: 8br2+smyDkiK0fVcd7+Tg/PQFwrvA/KN6MV4pozjwXQ=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/CollectionTypeAdapter.cl
+ ass
+SHA-256-Digest: tMVajXLl8zmauq1iVxmNkkLXoca+nPnmNyDNIoGp5tM=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/CancelParams.class
+SHA-256-Digest: lQewEkX6Qlewl05huJZ+fUoIYmPKaPfoGGKolTxOKyU=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/ThrowableTypeAdapter.cla
+ ss
+SHA-256-Digest: F9axT4w3nrkTYm0GuRZITr4E1CjIDpwvD1UnSkh0Te8=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/JsonRpcMethodProvider.class
+SHA-256-Digest: 25EG1uO7T8zU5TimEzbPviMtshyvl8Bew4EmPQ6lnS4=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/MessageJsonHandler.class
+SHA-256-Digest: Bd6raD9T/1xeTORsbBUJJs8RJHfDpaeQQ1hNxrwyW+Y=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/JsonElementTypeAdapter.c
+ lass
+SHA-256-Digest: jrTg6dzSqrE+gs06n+fKtywuHsTfRR0zX18wL3aPdjE=
+
+Name: org/eclipse/lsp4j/jsonrpc/RemoteEndpoint$PendingRequestInfo.clas
+ s
+SHA-256-Digest: RLeWVCwMPdDk5RNMlhHkrHydc3t3CwxRBQVF2OeTIOI=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/AnnotationUtil$DelegateInfo.c
+ lass
+SHA-256-Digest: ihpfP/bC65fMVJ0yQOdEjc2iKCRH3lFnFEhs1uY8OCo=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/Either3.class
+SHA-256-Digest: +F+VpNMMQIpu0DWi1wEa3nQrZ1XHE7ikgNQfguIFg3s=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/EndpointProxy.class
+SHA-256-Digest: 6WCWVDNDNFC6CVlZb/TyH3abIAHhAYxF9x/lWJ/6MLE=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EitherTypeAdapterFactory
+ $Adapter.class
+SHA-256-Digest: jr0hSzs5wvBM/ZzOww5n43XtkDoTGbZSdDj9V+eGF6M=
+
+Name: org/eclipse/lsp4j/jsonrpc/RemoteEndpoint.class
+SHA-256-Digest: 08i4ptceW9RKmzCljB3T2sRGhiSxbtghcdBRNSBauQk=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/MessageTypeAdapterFactor
+ y.class
+SHA-256-Digest: KEcDm10O6qNbBZJ8/2IZKEp5GKV2Xoc8vUZQ2gOM5QU=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EnumTypeAdapterFactory.c
+ lass
+SHA-256-Digest: RNHi36FozY049u5RO6cmkH5qPIOeohzv9yPls1OEMD4=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/Either.class
+SHA-256-Digest: V/M1V9lpN7sBDcXziP6L7h1pGeIbbP2JJOHewj9Fja0=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/StreamMessageConsumer.class
+SHA-256-Digest: HkItHHT4wDeO80jS7OCxasNe1/eT4rJKPg3d0ZyjogM=
+
+Name: org/eclipse/lsp4j/jsonrpc/CompletableFutures.class
+SHA-256-Digest: xINwOO/KTZwB8bFyY2tmGG6Pao1hZIZizCMDx0fkPyc=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/MessageTypeAdapter.class
+SHA-256-Digest: kGZUgyDSBW0WBjiUNzE026/Culmlq3B48bVoTjwuSY8=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EitherTypeAdapter$Either
+ TypeArgument.class
+SHA-256-Digest: 8qgMMttzQsJRAFUn5Qlv02npfcwNRe3m6MzG31nG5zA=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/ResponseMessage.class
+SHA-256-Digest: 17/OPNGGo57mMGwKRWzG4e+CVcxDZ9bGkSh+soc06uQ=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/CollectionTypeAdapterFac
+ tory.class
+SHA-256-Digest: eVZtFwhC64VZ+8lt5TYg4gwd7KWJvUGcl4RYBdXc638=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/JsonNotification.class
+SHA-256-Digest: jH6K4MD6jgCe09BrTk3enLYbV8DRRtJjmfjS83zjpKE=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/MessageIssue.class
+SHA-256-Digest: 8FPFgRzv447basdWtwOJeEhdjWdSyO4M2P5y/50saIs=
+
+Name: org/eclipse/lsp4j/jsonrpc/ResponseErrorException.class
+SHA-256-Digest: EFsm/ujFD+vFs8E8nGYWnVQsuLx2C0TcKMHhjzQ1nWc=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/AnnotationUtil.class
+SHA-256-Digest: wzAfakcqqZ1MgQz5jTkeBbCq+8wc+46S+sshBxeu4Es=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/MethodProvider.class
+SHA-256-Digest: JSXlVKgUtOL7Z8q7Ur9EBF2wprGcKN5kXLTeK1HW9Aw=
+
+Name: org/eclipse/lsp4j/jsonrpc/validation/NonNull.class
+SHA-256-Digest: +gYFDgikyVrrNKiQtazZVA4CZNw6KiF6Elij8W3Gpfs=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/CollectionTypeAdapterFac
+ tory$Adapter.class
+SHA-256-Digest: yAqpT/1CbbArcxbCO+B/kDWnkhU+yclz7zuldZLYAV0=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/MessageTypeAdapter$Facto
+ ry.class
+SHA-256-Digest: 4UDlAnhO3qkRpJIjmDcOGblu5RF84AnTWAUOTnChyTo=
+
+Name: org/eclipse/lsp4j/jsonrpc/Endpoint.class
+SHA-256-Digest: TGTU/nGvUvoI2v5DLIFy59XAZHTs7ts34CA4GbP2Kv4=
+
+Name: org/eclipse/lsp4j/jsonrpc/MessageIssueHandler.class
+SHA-256-Digest: s5990VwpCkZZp5m1QvVF9GWgt63oX/Y1HYutIQxEuL4=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/ResponseErrorCode.class
+SHA-256-Digest: ZlDtll131ZwkpaC/xDJpmLNYy4OgtmsBxzKYavtRcqQ=
+
+Name: about.html
+SHA-256-Digest: cbTCXozC/yaE+sFcgSLnpRV2gcDXSdmJ3/uGfK4qEnY=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/JsonRpcMethod.class
+SHA-256-Digest: 3O4tn6gflNsX7OPNVr7jQDssh/TWxqsgGhOiCFryv8w=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/JsonSegment.class
+SHA-256-Digest: XbtzaAlYxcwjq7IzL2CPssHK5mSG1721U+Y0hHQCuos=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/GenericEndpoint.class
+SHA-256-Digest: dvZqv67+jV+GiZGIOBlv7w1UpY3FMx5Bus1hYHWEvqI=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/MessageConstants.class
+SHA-256-Digest: fr97GACP7pUfxI1w5jO0ZuzSvpov4oNvP4p4OfYv1q0=
+
+Name: org/eclipse/lsp4j/jsonrpc/MessageIssueException.class
+SHA-256-Digest: nphIQUx9LspdcISEs3nQEfWMlcO0UthxcMYQlFyZA4w=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EitherTypeAdapter$Factor
+ y.class
+SHA-256-Digest: lxHHMhi6L1ZDyoaAOaREdS5XKgdM6KqFkgCEw8cGVG4=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/JsonRequest.class
+SHA-256-Digest: F3irJ6c6cLtavSYExHvMra/SID8UcuTmCzKpGuFoRik=
+
+Name: org/eclipse/lsp4j/jsonrpc/Launcher$1.class
+SHA-256-Digest: yAv5BaBT9mVSk6qiTOldlMUOpwlLlt6NztTTjrjCPf4=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/EitherTypeAdapterFactory
+ .class
+SHA-256-Digest: t+I3w6eEAb5D5MXeJbgPbgxrbTz3ug/jD+4W/++PjbM=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/ResponseError.class
+SHA-256-Digest: 7+KWil+ALvuzJcPmmdxiZ1mscFa3vkIgtmHEODVAOaU=
+
+Name: org/eclipse/lsp4j/jsonrpc/MessageProducer.class
+SHA-256-Digest: w8YBFHdxQbNHib4oIU5fhbM1Socy7Ih4UpzjCZqinrM=
+
+Name: org/eclipse/lsp4j/jsonrpc/MessageConsumer.class
+SHA-256-Digest: b2Ss+WrrhpsnUoOh8FrapZu5MtLD0Uq8H5gt0K/NHzM=
+
+Name: org/eclipse/lsp4j/jsonrpc/messages/IdentifiableMessage.class
+SHA-256-Digest: CQDXhtfDS/bu/UjR9/M7hQ8cicUI4Tikh2SZvavjW6k=
+
+Name: org/eclipse/lsp4j/jsonrpc/CancelChecker.class
+SHA-256-Digest: 72YpUZ5gzzQXCF7xS+XyLbLLN+Yd4z0NnZHSMDY5Oyk=
+
+Name: org/eclipse/lsp4j/jsonrpc/json/adapters/ThrowableTypeAdapter$Fac
+ tory.class
+SHA-256-Digest: 3QKoBICEvmfQYYRzbriPxlOeLsYR64NlR5aGjXiDnW8=
+
+Name: org/eclipse/lsp4j/jsonrpc/services/JsonDelegate.class
+SHA-256-Digest: JRQVqK62qsrPOYxICzm1xd37reiwLV++L6TYDL9JFkU=
+
