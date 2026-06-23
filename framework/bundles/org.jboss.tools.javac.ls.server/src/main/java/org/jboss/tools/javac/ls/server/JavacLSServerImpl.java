@@ -12,8 +12,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import org.jboss.tools.javac.ls.api.JavacLSClient;
+import org.eclipse.lsp4j.InitializeParams;
+import org.eclipse.lsp4j.InitializeResult;
+import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.services.LanguageClient;
+import org.eclipse.lsp4j.services.TextDocumentService;
+import org.eclipse.lsp4j.services.WorkspaceService;
 import org.jboss.tools.javac.ls.api.JavacLSServer;
+import org.jboss.tools.javac.ls.api.dao.DiagnosticList;
 import org.jboss.tools.javac.ls.api.dao.ProjectInfo;
 import org.jboss.tools.javac.ls.api.dao.Status;
 import org.jboss.tools.javac.ls.server.model.WorkspaceModel;
@@ -24,26 +30,32 @@ public class JavacLSServerImpl implements JavacLSServer {
 	private static final Logger LOG = LoggerFactory.getLogger(JavacLSServerImpl.class);
 
 	private final JavacLsServerLauncher launcher;
-	private final List<JavacLSClient> clients;
+	private final List<LanguageClient> clients;
+	private final TextDocumentService textDocumentService;
+	private final WorkspaceService workspaceService;
 
 	public JavacLSServerImpl(JavacLsServerLauncher launcher) {
 		this.launcher = launcher;
 		this.clients = new ArrayList<>();
+		this.textDocumentService = new JavacTextDocumentService(this);
+		this.workspaceService = new JavacWorkspaceService(this);
 	}
 
-	public void addClient(JavacLSClient client) {
+	public void addClient(LanguageClient client) {
 		synchronized(clients) {
 			clients.add(client);
+			LOG.info("Client connected (total: {})", clients.size());
 		}
 	}
 
-	public void removeClient(JavacLSClient client) {
+	public void removeClient(LanguageClient client) {
 		synchronized(clients) {
 			clients.remove(client);
+			LOG.info("Client disconnected (remaining: {})", clients.size());
 		}
 	}
 
-	public List<JavacLSClient> getClients() {
+	public List<LanguageClient> getClients() {
 		synchronized(clients) {
 			return new ArrayList<>(clients);
 		}
@@ -57,8 +69,8 @@ public class JavacLSServerImpl implements JavacLSServer {
 	}
 
 	@Override
-	public void shutdown() {
-		LOG.info("Received shutdown request");
+	public void shutdownServer() {
+		LOG.info("Received shutdownServer request (custom protocol)");
 		launcher.shutdown();
 	}
 
@@ -115,5 +127,94 @@ public class JavacLSServerImpl implements JavacLSServer {
 
 		return CompletableFuture.completedFuture(
 			new Status(Status.OK, "javac-ls", "Project removed: " + projectName));
+	}
+
+	@Override
+	public CompletableFuture<DiagnosticList> getProjectDiagnostics(String projectName) {
+		LOG.debug("Received getProjectDiagnostics request: {}", projectName);
+
+		if (projectName == null || projectName.trim().isEmpty()) {
+			LOG.warn("Project name is required for getProjectDiagnostics");
+			return CompletableFuture.completedFuture(new DiagnosticList());
+		}
+
+		WorkspaceModel workspace = launcher.getWorkspaceModel();
+		if (workspace == null) {
+			LOG.warn("Workspace not initialized");
+			return CompletableFuture.completedFuture(new DiagnosticList(projectName));
+		}
+
+		// Get diagnostics from workspace model (will scan for changes first)
+		DiagnosticList diagnostics = workspace.getProjectDiagnostics(projectName);
+
+		LOG.debug("Returning {} diagnostics for project {}", diagnostics.getDiagnostics().size(), projectName);
+		return CompletableFuture.completedFuture(diagnostics);
+	}
+
+	@Override
+	public CompletableFuture<DiagnosticList> getFileDiagnostics(String filePath) {
+		LOG.debug("Received getFileDiagnostics request: {}", filePath);
+
+		if (filePath == null || filePath.trim().isEmpty()) {
+			LOG.warn("File path is required for getFileDiagnostics");
+			return CompletableFuture.completedFuture(new DiagnosticList());
+		}
+
+		WorkspaceModel workspace = launcher.getWorkspaceModel();
+		if (workspace == null) {
+			LOG.warn("Workspace not initialized");
+			return CompletableFuture.completedFuture(new DiagnosticList());
+		}
+
+		// Get diagnostics from workspace model (will scan for changes first)
+		DiagnosticList diagnostics = workspace.getFileDiagnostics(filePath);
+
+		LOG.debug("Returning {} diagnostics for file {}", diagnostics.getDiagnostics().size(), filePath);
+		return CompletableFuture.completedFuture(diagnostics);
+	}
+
+	// ========== LSP LanguageServer Interface Methods ==========
+
+	@Override
+	public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
+		LOG.info("LSP initialize request received");
+
+		ServerCapabilities capabilities = new ServerCapabilities();
+
+		// Advertise diagnostic support
+		// Note: DiagnosticOptions is LSP 3.17+, may not be in lsp4j 1.0.0
+		// For now, we support push diagnostics (textDocument/publishDiagnostics) which is always available
+		// TODO: Add pull diagnostics capability when lsp4j supports it
+
+		InitializeResult result = new InitializeResult(capabilities);
+		return CompletableFuture.completedFuture(result);
+	}
+
+	@Override
+	public CompletableFuture<Object> shutdown() {
+		LOG.info("LSP shutdown request received");
+		// LSP shutdown - prepare for exit but don't actually exit yet
+		return CompletableFuture.completedFuture(null);
+	}
+
+	@Override
+	public void exit() {
+		LOG.info("LSP exit notification received");
+		launcher.shutdown();
+	}
+
+	@Override
+	public TextDocumentService getTextDocumentService() {
+		return textDocumentService;
+	}
+
+	@Override
+	public WorkspaceService getWorkspaceService() {
+		return workspaceService;
+	}
+
+	// Package-protected accessor for services to access launcher
+	JavacLsServerLauncher getLauncher() {
+		return launcher;
 	}
 }

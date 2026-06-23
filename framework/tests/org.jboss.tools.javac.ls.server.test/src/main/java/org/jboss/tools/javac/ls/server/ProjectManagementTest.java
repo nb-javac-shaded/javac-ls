@@ -126,12 +126,6 @@ public class ProjectManagementTest {
 				InitializationState.STATE_READY,
 				serverLauncher.getWorkspaceModel().getInitializationState());
 
-		// Verify client received projectAdded event
-		assertEquals("Client should receive projectAdded event", 1, recordingClient.projectsAdded.size());
-		ProjectInfo addedProject = recordingClient.projectsAdded.get(0);
-		assertEquals("Project name should match", "test-project", addedProject.getName());
-		assertEquals("Project path should match", projectDir.getAbsolutePath(), addedProject.getPath());
-
 		// Verify client received state change events (INDEXING and READY)
 		assertTrue("Client should receive initialization state changes",
 				recordingClient.stateChanges.size() >= 2);
@@ -174,12 +168,6 @@ public class ProjectManagementTest {
 		// Verify project is removed from workspace
 		assertFalse("Workspace should not have the project",
 				serverLauncher.getWorkspaceModel().hasProject("to-remove"));
-
-		// Verify client received projectRemoved event
-		assertEquals("Client should receive projectRemoved event", 1, recordingClient.projectsRemoved.size());
-		ProjectInfo removedProject = recordingClient.projectsRemoved.get(0);
-		assertEquals("Project name should match", "to-remove", removedProject.getName());
-		assertEquals("Project path should match", projectDir.getAbsolutePath(), removedProject.getPath());
 	}
 
 	@Test
@@ -274,10 +262,8 @@ public class ProjectManagementTest {
 	/**
 	 * Client implementation that records all events received from the server.
 	 */
-	private static class RecordingClient implements JavacLSClient {
+	private static class RecordingClient extends org.jboss.tools.javac.ls.server.util.TestJavacLSClient {
 		List<InitializationState> stateChanges = new ArrayList<>();
-		List<ProjectInfo> projectsAdded = new ArrayList<>();
-		List<ProjectInfo> projectsRemoved = new ArrayList<>();
 		private JavacLSServer server;
 
 		public void initialize(JavacLSServer server) {
@@ -294,22 +280,8 @@ public class ProjectManagementTest {
 			stateChanges.add(state);
 		}
 
-		@Override
-		public void projectAdded(ProjectInfo project) {
-			System.out.println("Client received project added: " + project);
-			projectsAdded.add(project);
-		}
-
-		@Override
-		public void projectRemoved(ProjectInfo project) {
-			System.out.println("Client received project removed: " + project);
-			projectsRemoved.add(project);
-		}
-
 		void clear() {
 			stateChanges.clear();
-			projectsAdded.clear();
-			projectsRemoved.clear();
 		}
 	}
 

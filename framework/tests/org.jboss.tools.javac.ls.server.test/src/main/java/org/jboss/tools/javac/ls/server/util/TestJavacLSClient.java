@@ -6,62 +6,52 @@
  *
  * Contributors: Red Hat, Inc.
  ******************************************************************************/
-package org.jboss.tools.javac.ls.client.bindings;
+package org.jboss.tools.javac.ls.server.util;
+
+import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.jboss.tools.javac.ls.api.JavacLSClient;
-import org.jboss.tools.javac.ls.api.JavacLSServer;
 import org.jboss.tools.javac.ls.api.dao.InitializationState;
 
-import java.util.concurrent.CompletableFuture;
-
-public class ServerManagementClientImpl implements JavacLSClient {
-
-	private JavacLSServer server;
-
-	public void initialize(JavacLSServer server) {
-		this.server = server;
-	}
-
-	public JavacLSServer getProxy() {
-		return server;
-	}
+/**
+ * Base test client implementation that provides no-op implementations
+ * of all LanguageClient methods. Tests can extend this and override
+ * only the methods they care about.
+ */
+public class TestJavacLSClient implements JavacLSClient {
 
 	@Override
 	public void initializationStateChanged(InitializationState state) {
-		System.out.println("Initialization state changed: " + state.toString());
+		// No-op by default
 	}
-
-	// ========== LanguageClient Interface Methods ==========
 
 	@Override
 	public void telemetryEvent(Object object) {
-		// No-op for CLI client
+		// No-op by default
 	}
 
 	@Override
 	public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {
-		System.out.println("Diagnostics for " + diagnostics.getUri() + ": " +
-			diagnostics.getDiagnostics().size() + " issue(s)");
+		// No-op by default
 	}
 
 	@Override
 	public void showMessage(MessageParams messageParams) {
-		System.out.println("[" + messageParams.getType() + "] " + messageParams.getMessage());
+		// No-op by default
 	}
 
 	@Override
 	public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams requestParams) {
-		// CLI client doesn't support interactive message requests
+		// No-op by default
 		return CompletableFuture.completedFuture(null);
 	}
 
 	@Override
 	public void logMessage(MessageParams message) {
-		System.out.println("[LOG] " + message.getMessage());
+		// No-op by default
 	}
-
 }

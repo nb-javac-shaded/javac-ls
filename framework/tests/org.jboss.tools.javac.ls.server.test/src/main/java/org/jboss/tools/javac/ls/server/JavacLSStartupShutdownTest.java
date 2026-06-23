@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Random;
 
 import org.jboss.tools.javac.ls.api.JavacLSClient;
+import org.eclipse.lsp4j.services.LanguageClient;
 import org.jboss.tools.javac.ls.server.util.ClientLauncher;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -79,11 +80,11 @@ public class JavacLSStartupShutdownTest {
 		initNew();
 
 		assertNotNull(clientInstance.getServerProxy());
-		List<JavacLSClient> clients = serverInstance.getClients();
+		List<LanguageClient> clients = serverInstance.getClients();
 		assertNotNull(clients);
 		assertEquals(1, clients.size());
 
-		clientInstance.getServerProxy().shutdown();
+		clientInstance.getServerProxy().shutdownServer();
 
 		// Give shutdown time to complete
 		try {

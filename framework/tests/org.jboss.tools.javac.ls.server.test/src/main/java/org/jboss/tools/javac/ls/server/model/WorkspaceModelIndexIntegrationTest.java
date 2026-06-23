@@ -22,6 +22,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 
+import org.jboss.tools.javac.ls.api.dao.Diagnostic;
+import org.jboss.tools.javac.ls.api.dao.DiagnosticList;
 import org.jboss.tools.javac.ls.index.model.FieldDeclarationEntry;
 import org.jboss.tools.javac.ls.index.model.Location;
 import org.jboss.tools.javac.ls.index.model.MethodDeclarationEntry;
@@ -499,5 +501,192 @@ public class WorkspaceModelIndexIntegrationTest {
 		} finally {
 			indexCache.unlockRead();
 		}
+	}
+
+	@Test
+	public void testGetFileDiagnostics() throws IOException {
+		// Create project with a Java file that has compilation errors
+		File projectDir = new File(tempDir, "test-project");
+		File srcDir = new File(projectDir, "src");
+		assertTrue("Should create dirs", srcDir.mkdirs());
+
+		// File with errors: undefined variable, missing import, wrong return type
+		String sourceWithErrors = """
+			package test;
+
+			public class ErrorTest {
+				public String getValue() {
+					return undefinedVariable; // error: cannot find symbol
+				}
+
+				public void useUndefinedClass() {
+					UndefinedClass obj = new UndefinedClass(); // error: cannot find symbol
+				}
+
+				public int wrongReturnType() {
+					return "string"; // error: incompatible types
+				}
+			}
+			""";
+
+		File javaFile = new File(srcDir, "ErrorTest.java");
+		Files.write(javaFile.toPath(), sourceWithErrors.getBytes(StandardCharsets.UTF_8));
+
+		model.addProject("test-project", projectDir.getAbsolutePath());
+		model.indexProject("test-project");
+
+		// Get diagnostics for the file
+		DiagnosticList diagnostics = model.getFileDiagnostics(javaFile.getAbsolutePath());
+
+		assertNotNull("Diagnostics should not be null", diagnostics);
+		assertEquals("Project name should match", "test-project", diagnostics.getProjectName());
+		assertEquals("File path should match", javaFile.getAbsolutePath(), diagnostics.getFilePath());
+
+		// Should have at least 3 errors (one for each error in the source)
+		assertTrue("Should have at least 3 diagnostics", diagnostics.getDiagnostics().size() >= 3);
+		assertTrue("Should have at least 3 errors", diagnostics.getErrorCount() >= 3);
+
+		// Verify diagnostics have proper structure
+		for (Diagnostic diag : diagnostics.getDiagnostics()) {
+			assertNotNull("Message should not be null", diag.getMessage());
+			assertEquals("File path should match", javaFile.getAbsolutePath(), diag.getFilePath());
+			assertTrue("Line number should be positive", diag.getLineNumber() > 0);
+			// Severity should be error or warning (some compilation errors may be reported as warnings without full classpath)
+			assertTrue("Should be an error or warning",
+				diag.getSeverity() == Diagnostic.ERROR || diag.getSeverity() == Diagnostic.WARNING);
+		}
+	}
+
+	@Test
+	public void testGetProjectDiagnostics() throws IOException {
+		// Create project with multiple files, some with errors
+		File projectDir = new File(tempDir, "test-project");
+		File srcDir = new File(projectDir, "src");
+		assertTrue("Should create dirs", srcDir.mkdirs());
+
+		// File 1: No errors
+		String validSource = """
+			package test;
+
+			public class ValidClass {
+				private String name;
+
+				public String getName() {
+					return name;
+				}
+			}
+			""";
+		Files.write(new File(srcDir, "ValidClass.java").toPath(),
+			validSource.getBytes(StandardCharsets.UTF_8));
+
+		// File 2: Has errors
+		String errorSource1 = """
+			package test;
+
+			public class ErrorClass1 {
+				public void method() {
+					int x = unknownVariable; // error
+				}
+			}
+			""";
+		Files.write(new File(srcDir, "ErrorClass1.java").toPath(),
+			errorSource1.getBytes(StandardCharsets.UTF_8));
+
+		// File 3: Has different errors
+		String errorSource2 = """
+			package test;
+
+			public class ErrorClass2 {
+				public int getNumber() {
+					return "not a number"; // error: incompatible types
+				}
+			}
+			""";
+		Files.write(new File(srcDir, "ErrorClass2.java").toPath(),
+			errorSource2.getBytes(StandardCharsets.UTF_8));
+
+		model.addProject("test-project", projectDir.getAbsolutePath());
+		model.indexProject("test-project");
+
+		// Get diagnostics for the whole project
+		DiagnosticList diagnostics = model.getProjectDiagnostics("test-project");
+
+		assertNotNull("Diagnostics should not be null", diagnostics);
+		assertEquals("Project name should match", "test-project", diagnostics.getProjectName());
+
+		// Should have errors from both error files (at least 2)
+		assertTrue("Should have at least 2 errors", diagnostics.getErrorCount() >= 2);
+
+		// Verify errors are from the expected files
+		boolean hasErrorClass1 = false;
+		boolean hasErrorClass2 = false;
+
+		for (Diagnostic diag : diagnostics.getDiagnostics()) {
+			if (diag.getFilePath().contains("ErrorClass1.java")) {
+				hasErrorClass1 = true;
+			}
+			if (diag.getFilePath().contains("ErrorClass2.java")) {
+				hasErrorClass2 = true;
+			}
+		}
+
+		assertTrue("Should have errors from ErrorClass1", hasErrorClass1);
+		assertTrue("Should have errors from ErrorClass2", hasErrorClass2);
+	}
+
+	@Test
+	public void testGetDiagnosticsAfterFileChange() throws IOException {
+		// Create project with a file
+		File projectDir = new File(tempDir, "test-project");
+		File srcDir = new File(projectDir, "src");
+		assertTrue("Should create dirs", srcDir.mkdirs());
+
+		// Initially valid file
+		String validSource = """
+			package test;
+
+			public class Test {
+				private int value;
+
+				public int getValue() {
+					return value;
+				}
+			}
+			""";
+		File javaFile = new File(srcDir, "Test.java");
+		Files.write(javaFile.toPath(), validSource.getBytes(StandardCharsets.UTF_8));
+
+		model.addProject("test-project", projectDir.getAbsolutePath());
+		model.indexProject("test-project");
+
+		// Get initial diagnostics (should be clean)
+		DiagnosticList diagnostics1 = model.getFileDiagnostics(javaFile.getAbsolutePath());
+		assertEquals("Should have no errors initially", 0, diagnostics1.getErrorCount());
+
+		// Modify file to introduce error
+		String errorSource = """
+			package test;
+
+			public class Test {
+				private int value;
+
+				public int getValue() {
+					return undefinedVariable; // error!
+				}
+			}
+			""";
+		Files.write(javaFile.toPath(), errorSource.getBytes(StandardCharsets.UTF_8));
+
+		// Get diagnostics after change (should detect the change and reparse)
+		DiagnosticList diagnostics2 = model.getFileDiagnostics(javaFile.getAbsolutePath());
+
+		assertTrue("Should have errors after introducing bug", diagnostics2.getErrorCount() > 0);
+
+		// Verify the error is about the undefined variable
+		boolean hasUndefinedVariableError = diagnostics2.getDiagnostics().stream()
+			.anyMatch(d -> d.getMessage().toLowerCase().contains("cannot find symbol")
+				|| d.getMessage().toLowerCase().contains("undefinedvariable"));
+
+		assertTrue("Should have error about undefined variable", hasUndefinedVariableError);
 	}
 }

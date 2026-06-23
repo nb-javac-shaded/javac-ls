@@ -6,8 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.jboss.tools.javac.ls.api.JavacLSClient;
+import org.eclipse.lsp4j.services.LanguageClient;
 import org.jboss.tools.javac.ls.api.dao.InitializationState;
-import org.jboss.tools.javac.ls.api.dao.ProjectInfo;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -16,7 +16,7 @@ import org.junit.Test;
  */
 public class EventManagerTest {
 
-	private List<JavacLSClient> clients;
+	private List<LanguageClient> clients;
 	private TestClient client1;
 	private TestClient client2;
 
@@ -86,19 +86,9 @@ public class EventManagerTest {
 	@Test
 	public void testClientExceptionDoesNotPreventOtherClients() {
 		// Add a client that throws exceptions
-		clients.add(new JavacLSClient() {
+		clients.add(new org.jboss.tools.javac.ls.server.util.TestJavacLSClient() {
 			@Override
 			public void initializationStateChanged(InitializationState state) {
-				throw new RuntimeException("Simulated client error");
-			}
-
-			@Override
-			public void projectAdded(ProjectInfo project) {
-				throw new RuntimeException("Simulated client error");
-			}
-
-			@Override
-			public void projectRemoved(ProjectInfo project) {
 				throw new RuntimeException("Simulated client error");
 			}
 		});
@@ -111,85 +101,15 @@ public class EventManagerTest {
 		assertEquals("Client 2 should receive event", 1, client2.stateChanges.size());
 	}
 
-	@Test
-	public void testFireProjectAdded() {
-		EventManager.fireProjectAdded(clients, "test-project", "/path/to/project");
-
-		assertEquals("Client 1 should receive event", 1, client1.projectsAdded.size());
-		assertEquals("Client 2 should receive event", 1, client2.projectsAdded.size());
-
-		ProjectInfo project1 = client1.projectsAdded.get(0);
-		assertEquals("Should have project name", "test-project", project1.getName());
-		assertEquals("Should have project path", "/path/to/project", project1.getPath());
-
-		ProjectInfo project2 = client2.projectsAdded.get(0);
-		assertEquals("Should have project name", "test-project", project2.getName());
-		assertEquals("Should have project path", "/path/to/project", project2.getPath());
-	}
-
-	@Test
-	public void testFireProjectRemoved() {
-		EventManager.fireProjectRemoved(clients, "old-project", "/path/to/old");
-
-		assertEquals("Client 1 should receive event", 1, client1.projectsRemoved.size());
-		assertEquals("Client 2 should receive event", 1, client2.projectsRemoved.size());
-
-		ProjectInfo project1 = client1.projectsRemoved.get(0);
-		assertEquals("Should have project name", "old-project", project1.getName());
-		assertEquals("Should have project path", "/path/to/old", project1.getPath());
-
-		ProjectInfo project2 = client2.projectsRemoved.get(0);
-		assertEquals("Should have project name", "old-project", project2.getName());
-		assertEquals("Should have project path", "/path/to/old", project2.getPath());
-	}
-
-	@Test
-	public void testFireProjectAddedWithDAO() {
-		ProjectInfo project = new ProjectInfo("my-project", "/path/to/my");
-		EventManager.fireProjectAdded(clients, project);
-
-		assertEquals("Client 1 should receive event", 1, client1.projectsAdded.size());
-		assertEquals("Client 2 should receive event", 1, client2.projectsAdded.size());
-
-		// Both clients should receive the same DAO instance
-		assertSame("Client 1 should receive same DAO", project, client1.projectsAdded.get(0));
-		assertSame("Client 2 should receive same DAO", project, client2.projectsAdded.get(0));
-	}
-
-	@Test
-	public void testFireProjectRemovedWithDAO() {
-		ProjectInfo project = new ProjectInfo("removed-project", "/path/to/removed");
-		EventManager.fireProjectRemoved(clients, project);
-
-		assertEquals("Client 1 should receive event", 1, client1.projectsRemoved.size());
-		assertEquals("Client 2 should receive event", 1, client2.projectsRemoved.size());
-
-		// Both clients should receive the same DAO instance
-		assertSame("Client 1 should receive same DAO", project, client1.projectsRemoved.get(0));
-		assertSame("Client 2 should receive same DAO", project, client2.projectsRemoved.get(0));
-	}
-
 	/**
 	 * Test client that records events.
 	 */
-	private static class TestClient implements JavacLSClient {
+	private static class TestClient extends org.jboss.tools.javac.ls.server.util.TestJavacLSClient {
 		List<InitializationState> stateChanges = new ArrayList<>();
-		List<ProjectInfo> projectsAdded = new ArrayList<>();
-		List<ProjectInfo> projectsRemoved = new ArrayList<>();
 
 		@Override
 		public void initializationStateChanged(InitializationState state) {
 			stateChanges.add(state);
-		}
-
-		@Override
-		public void projectAdded(ProjectInfo project) {
-			projectsAdded.add(project);
-		}
-
-		@Override
-		public void projectRemoved(ProjectInfo project) {
-			projectsRemoved.add(project);
 		}
 	}
 }

@@ -32,6 +32,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+import org.jboss.tools.javac.ls.api.dao.Diagnostic;
+import org.jboss.tools.javac.ls.api.dao.DiagnosticList;
 import org.jboss.tools.javac.ls.api.dao.InitializationState;
 import org.jboss.tools.javac.ls.index.store.JavaIndex;
 import org.jboss.tools.javac.ls.index.visitor.DOMToIndexVisitor;
@@ -50,6 +52,8 @@ import com.google.gson.reflect.TypeToken;
 
 import shaded.org.eclipse.jdt.core.dom.AST;
 import shaded.org.eclipse.jdt.core.dom.CompilationUnit;
+import shaded.org.eclipse.jdt.core.compiler.IProblem;
+import shaded.org.eclipse.jdt.internal.compiler.problem.ProblemSeverities;
 
 /**
  * Manages the workspace model - mapping project names to filesystem paths.
@@ -460,6 +464,149 @@ public class WorkspaceModel {
 	 */
 	public DOMCache getDOMCache() {
 		return domCache;
+	}
+
+	/**
+	 * Get diagnostics (errors, warnings) for all files in a project.
+	 * Scans for changed files before collecting diagnostics to ensure results are up-to-date.
+	 *
+	 * @param projectName the project name
+	 * @return list of diagnostics for all files in the project
+	 */
+	public DiagnosticList getProjectDiagnostics(String projectName) {
+		WorkspaceProject project = projects.get(projectName);
+		if (project == null) {
+			LOG.warn("Cannot get diagnostics for unknown project: {}", projectName);
+			return new DiagnosticList(projectName);
+		}
+
+		// Scan for changed files first to ensure diagnostics are up-to-date
+		scanAndReparseChangedFiles(projectName);
+
+		// Get classpath for parsing
+		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+		List<File> classpath = new ArrayList<>();
+		for (IJavacClasspathEntry entry : classpathEntries) {
+			if (entry.getPath() != null) {
+				classpath.add(new File(entry.getPath()));
+			}
+		}
+
+		DiagnosticList result = new DiagnosticList(projectName);
+
+		// Find all Java files in the project
+		List<Path> javaFiles = findJavaFiles(Paths.get(project.getPath()));
+
+		// Collect diagnostics from each file
+		for (Path file : javaFiles) {
+			CompilationUnit cu = domCache.getCompilationUnit(
+					file.toUri(),
+					classpath,
+					AST.JLS21,
+					null, // compiler options
+					true  // resolve bindings - needed for diagnostics
+			);
+
+			if (cu != null) {
+				IProblem[] problems = cu.getProblems();
+				if (problems != null) {
+					for (IProblem problem : problems) {
+						result.addDiagnostic(convertProblemToDiagnostic(problem, file.toString()));
+					}
+				}
+			}
+		}
+
+		LOG.debug("Collected {} diagnostics for project {}", result.getDiagnostics().size(), projectName);
+		return result;
+	}
+
+	/**
+	 * Get diagnostics (errors, warnings) for a specific file.
+	 * Scans for changed files before collecting diagnostics to ensure results are up-to-date.
+	 *
+	 * @param filePath the absolute path to the file
+	 * @return list of diagnostics for the file
+	 */
+	public DiagnosticList getFileDiagnostics(String filePath) {
+		Path file = Paths.get(filePath);
+
+		// Find which project this file belongs to
+		String projectName = null;
+		for (WorkspaceProject project : projects.values()) {
+			Path projectPath = Paths.get(project.getPath());
+			if (file.startsWith(projectPath)) {
+				projectName = project.getName();
+				break;
+			}
+		}
+
+		if (projectName == null) {
+			LOG.warn("Cannot find project for file: {}", filePath);
+			return new DiagnosticList(null, filePath);
+		}
+
+		// Scan for changed files first to ensure diagnostics are up-to-date
+		scanAndReparseChangedFiles(projectName);
+
+		// Get classpath for parsing
+		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+		List<File> classpath = new ArrayList<>();
+		for (IJavacClasspathEntry entry : classpathEntries) {
+			if (entry.getPath() != null) {
+				classpath.add(new File(entry.getPath()));
+			}
+		}
+
+		DiagnosticList result = new DiagnosticList(projectName, filePath);
+
+		// Get compilation unit from cache
+		CompilationUnit cu = domCache.getCompilationUnit(
+				file.toUri(),
+				classpath,
+				AST.JLS21,
+				null, // compiler options
+				true  // resolve bindings - needed for diagnostics
+		);
+
+		if (cu != null) {
+			IProblem[] problems = cu.getProblems();
+			if (problems != null) {
+				for (IProblem problem : problems) {
+					result.addDiagnostic(convertProblemToDiagnostic(problem, filePath));
+				}
+			}
+		}
+
+		LOG.debug("Collected {} diagnostics for file {}", result.getDiagnostics().size(), filePath);
+		return result;
+	}
+
+	/**
+	 * Convert JDT IProblem to Diagnostic DAO.
+	 */
+	private Diagnostic convertProblemToDiagnostic(IProblem problem, String filePath) {
+		Diagnostic diag = new Diagnostic();
+		diag.setFilePath(filePath);
+		diag.setMessage(problem.getMessage());
+		diag.setLineNumber(problem.getSourceLineNumber());
+		diag.setStartPosition(problem.getSourceStart());
+		diag.setEndPosition(problem.getSourceEnd());
+
+		// Convert severity
+		if (problem.isError()) {
+			diag.setSeverity(Diagnostic.ERROR);
+		} else if (problem.isWarning()) {
+			diag.setSeverity(Diagnostic.WARNING);
+		} else {
+			diag.setSeverity(Diagnostic.INFO);
+		}
+
+		// Set column number (approximate from start position and line start)
+		// IProblem doesn't directly provide column, so we estimate
+		diag.setColumnNumber(0); // TODO: calculate column from source
+
+		return diag;
 	}
 
 	/**
@@ -941,6 +1088,11 @@ public class WorkspaceModel {
 			for (Path file : files) {
 				indexFileWithBindings(file, classpath, index);
 				indexCache.trackIndividuallyParsedFile(file);
+
+				// Notify listeners about diagnostics change after reparsing
+				String filePath = file.toString();
+				DiagnosticList diagnostics = getFileDiagnostics(filePath);
+				notifyFileDiagnosticsChanged(filePath, diagnostics);
 			}
 
 			// Mark index as dirty
@@ -1199,6 +1351,22 @@ public class WorkspaceModel {
 				listener.projectRemoved(project);
 			} catch (Exception e) {
 				LOG.error("Error notifying listener of project removal", e);
+			}
+		}
+	}
+
+	/**
+	 * Notify listeners that file diagnostics have changed.
+	 *
+	 * @param filePath absolute path to the file
+	 * @param diagnostics the current diagnostics for the file
+	 */
+	private void notifyFileDiagnosticsChanged(String filePath, DiagnosticList diagnostics) {
+		for (WorkspaceModelListener listener : listeners) {
+			try {
+				listener.fileDiagnosticsChanged(filePath, diagnostics);
+			} catch (Exception e) {
+				LOG.error("Error notifying listener of file diagnostics change", e);
 			}
 		}
 	}

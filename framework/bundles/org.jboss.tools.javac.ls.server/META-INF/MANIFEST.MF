@@ -17,12 +17,15 @@ Import-Package: com.google.gson,
  org.osgi.framework,
  org.osgi.service.log,
  org.slf4j,
- shaded.org.eclipse.jdt.core.dom
+ shaded.org.eclipse.jdt.core.compiler,
+ shaded.org.eclipse.jdt.core.dom,
+ shaded.org.eclipse.jdt.internal.compiler.problem
 Export-Package: org.jboss.tools.javac.ls.server,
  org.jboss.tools.javac.ls.server.event,
  org.jboss.tools.javac.ls.server.index,
  org.jboss.tools.javac.ls.server.model,
  org.jboss.tools.javac.ls.server.model.classpath
-Require-Bundle: org.jboss.tools.javac.ls.api,
+Require-Bundle: org.jboss.tools.javac.ls.api;visibility:=reexport,
  org.jboss.tools.javac.ls.parser,
- org.jboss.tools.javac.ls.index
+ org.jboss.tools.javac.ls.index,
+ org.eclipse.lsp4j;bundle-version="1.0.0"

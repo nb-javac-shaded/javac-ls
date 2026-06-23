@@ -17,6 +17,7 @@ import java.util.concurrent.Executors;
 
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.MessageConsumer;
+import org.eclipse.lsp4j.services.LanguageClient;
 import org.jboss.tools.javac.ls.api.JavacLSClient;
 import org.jboss.tools.javac.ls.api.SocketLauncher;
 import org.jboss.tools.javac.ls.server.event.EventManager;
@@ -141,7 +142,7 @@ public class JavacLsServerLauncher {
 		return ServerFlags.isStartupSync();
 	}
 
-	public List<JavacLSClient> getClients() {
+	public List<LanguageClient> getClients() {
 		return serverImpl.getClients();
 	}
 
@@ -241,14 +242,22 @@ public class JavacLsServerLauncher {
 
 		@Override
 		public void projectAdded(WorkspaceProject project) {
-			LOG.debug("Broadcasting project added: {}", project.getName());
-			EventManager.fireProjectAdded(getClients(), project.getName(), project.getPath());
+			LOG.debug("Project added: {}", project.getName());
+			// Note: In LSP, clients notify the server about workspace folders,
+			// not the other way around. No client notification needed here.
 		}
 
 		@Override
 		public void projectRemoved(WorkspaceProject project) {
-			LOG.debug("Broadcasting project removed: {}", project.getName());
-			EventManager.fireProjectRemoved(getClients(), project.getName(), project.getPath());
+			LOG.debug("Project removed: {}", project.getName());
+			// Note: In LSP, clients notify the server about workspace folders,
+			// not the other way around. No client notification needed here.
+		}
+
+		@Override
+		public void fileDiagnosticsChanged(String filePath, org.jboss.tools.javac.ls.api.dao.DiagnosticList diagnostics) {
+			LOG.debug("Publishing diagnostics for file: {} ({} issues)", filePath, diagnostics.getDiagnostics().size());
+			EventManager.publishDiagnostics(getClients(), filePath, diagnostics);
 		}
 	}
 

@@ -8,6 +8,8 @@
  ******************************************************************************/
 package org.jboss.tools.javac.ls.server.model;
 
+import org.jboss.tools.javac.ls.api.dao.DiagnosticList;
+
 /**
  * Listener for workspace model changes.
  */
@@ -34,4 +36,12 @@ public interface WorkspaceModelListener {
 	 * @param project the project that was removed
 	 */
 	void projectRemoved(WorkspaceProject project);
+
+	/**
+	 * Called when a file has been reparsed and its diagnostics may have changed.
+	 *
+	 * @param filePath absolute path to the file
+	 * @param diagnostics the current diagnostics for the file
+	 */
+	void fileDiagnosticsChanged(String filePath, DiagnosticList diagnostics);
 }

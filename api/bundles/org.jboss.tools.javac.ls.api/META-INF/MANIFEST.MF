@@ -16,3 +16,4 @@ Import-Package: org.osgi.framework,
  com.google.gson
 Export-Package: org.jboss.tools.javac.ls.api,
  org.jboss.tools.javac.ls.api.dao
+Require-Bundle: org.eclipse.lsp4j;bundle-version="1.0.0"

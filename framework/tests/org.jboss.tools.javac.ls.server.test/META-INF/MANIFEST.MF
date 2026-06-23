@@ -5,7 +5,7 @@ Bundle-SymbolicName: org.jboss.tools.javac.ls.server.test
 Automatic-Module-Name: org.jboss.tools.javac.ls.server.test
 Bundle-Version: 0.0.1.qualifier
 Bundle-RequiredExecutionEnvironment: JavaSE-17
-Import-Package: com.google.gson;version="2.8.7",
+Import-Package: com.google.gson,
  org.eclipse.lsp4j.jsonrpc,
  org.jboss.tools.javac.ls.api,
  org.jboss.tools.javac.ls.api.dao,
@@ -19,9 +19,11 @@ Require-Bundle: org.jboss.tools.javac.ls.api,
  org.jboss.tools.javac.ls.search,
  org.jboss.tools.javac.ls.index,
  org.jboss.tools.javac.ls.parser,
+ org.jboss.tools.javac.ls.jdt.core.dom,
  org.junit,
  org.mockito,
  org.assertj;bundle-version="2.1.0",
- javax.annotation;bundle-version="1.2.0"
+ javax.annotation;bundle-version="1.2.0",
+ org.eclipse.lsp4j;bundle-version="1.0.0"
 Export-Package: org.jboss.tools.javac.ls.server.util
 Bundle-Activator: org.jboss.tools.javac.ls.server.ServerTestActivator

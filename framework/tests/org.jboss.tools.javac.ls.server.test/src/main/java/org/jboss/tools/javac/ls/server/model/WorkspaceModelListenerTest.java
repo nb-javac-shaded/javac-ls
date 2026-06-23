@@ -184,6 +184,11 @@ public class WorkspaceModelListenerTest {
 			projectsRemoved.add(project);
 		}
 
+		@Override
+		public void fileDiagnosticsChanged(String filePath, org.jboss.tools.javac.ls.api.dao.DiagnosticList diagnostics) {
+			// No-op for this test
+		}
+
 		void clear() {
 			stateChanges.clear();
 			projectsAdded.clear();
