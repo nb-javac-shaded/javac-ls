@@ -8,12 +8,17 @@
  ******************************************************************************/
 package org.jboss.tools.javac.ls.server;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
@@ -22,15 +27,37 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentDiagnosticParams;
 import org.eclipse.lsp4j.DocumentDiagnosticReport;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.RelatedFullDocumentDiagnosticReport;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.jboss.tools.javac.ls.api.dao.DiagnosticList;
+import org.jboss.tools.javac.ls.index.store.JavaIndex;
+import org.jboss.tools.javac.ls.search.engine.SearchEngine;
+import org.jboss.tools.javac.ls.search.match.SearchMatch;
+import org.jboss.tools.javac.ls.search.pattern.FieldPattern;
+import org.jboss.tools.javac.ls.search.pattern.MethodPattern;
+import org.jboss.tools.javac.ls.search.pattern.SearchPattern;
+import org.jboss.tools.javac.ls.search.pattern.TypePattern;
 import org.jboss.tools.javac.ls.server.event.EventManager;
 import org.jboss.tools.javac.ls.server.model.WorkspaceModel;
+import org.jboss.tools.javac.ls.server.model.WorkspaceProject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import shaded.org.eclipse.jdt.core.dom.ASTNode;
+import shaded.org.eclipse.jdt.core.dom.CompilationUnit;
+import shaded.org.eclipse.jdt.core.dom.IBinding;
+import shaded.org.eclipse.jdt.core.dom.IMethodBinding;
+import shaded.org.eclipse.jdt.core.dom.ITypeBinding;
+import shaded.org.eclipse.jdt.core.dom.IVariableBinding;
+import shaded.org.eclipse.jdt.core.dom.Name;
+import shaded.org.eclipse.jdt.core.dom.NodeFinder;
+import shaded.org.eclipse.jdt.core.dom.SimpleName;
+import shaded.org.eclipse.jdt.core.dom.VariableDeclaration;
 
 public class JavacTextDocumentService implements TextDocumentService {
 	private static final Logger LOG = LoggerFactory.getLogger(JavacTextDocumentService.class);
@@ -170,5 +197,355 @@ public class JavacTextDocumentService implements TextDocumentService {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * LSP: Go to definition.
+	 * Returns the location(s) where the symbol under the cursor is defined.
+	 */
+	@Override
+	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(DefinitionParams params) {
+		String uri = params.getTextDocument().getUri();
+		Position position = params.getPosition();
+		LOG.debug("textDocument/definition request for: {} at {}:{}", uri, position.getLine(), position.getCharacter());
+
+		try {
+			// Convert URI to file path
+			String filePath = uriToFilePath(uri);
+			Path path = Paths.get(filePath);
+
+			// Read file content
+			String content;
+			try {
+				content = Files.readString(path);
+			} catch (IOException e) {
+				LOG.error("Cannot read file: {}", filePath, e);
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Get workspace model
+			WorkspaceModel workspace = server.getLauncher().getWorkspaceModel();
+			if (workspace == null) {
+				LOG.warn("Workspace not initialized");
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Find which project this file belongs to
+			String projectName = findProjectForFile(workspace, filePath);
+			if (projectName == null) {
+				LOG.debug("File is not part of any workspace project: {}", filePath);
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Parse file with bindings
+			CompilationUnit cu = parseFileWithBindings(workspace, projectName, path);
+			if (cu == null) {
+				LOG.warn("Cannot parse file: {}", filePath);
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Convert position to offset
+			int offset = positionToOffset(content, position);
+			if (offset < 0) {
+				LOG.debug("Invalid position: {}:{}", position.getLine(), position.getCharacter());
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Find node at cursor position
+			ASTNode node = NodeFinder.perform(cu, offset, 0);
+			if (node == null) {
+				LOG.debug("No AST node at offset {}", offset);
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Extract Name node
+			Name nameNode = extractNameNode(node);
+			if (nameNode == null) {
+				LOG.debug("No name node found at offset {}", offset);
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Resolve binding
+			IBinding binding = nameNode.resolveBinding();
+			if (binding == null) {
+				LOG.debug("Cannot resolve binding for name: {}", nameNode.getFullyQualifiedName());
+				return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			}
+
+			// Handle different binding types
+			List<Location> locations = findDefinitionLocations(workspace, projectName, binding, cu, filePath, content);
+			return CompletableFuture.completedFuture(Either.forLeft(locations));
+
+		} catch (Exception e) {
+			LOG.error("Error in textDocument/definition for {}: {}", uri, e.getMessage(), e);
+			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+		}
+	}
+
+	/**
+	 * Parse a file with binding resolution enabled.
+	 */
+	private CompilationUnit parseFileWithBindings(WorkspaceModel workspace, String projectName, Path filePath) {
+		try {
+			// Get classpath for the project
+			List<java.io.File> classpath = new ArrayList<>();
+			var classpathEntries = workspace.getProjectClasspathNonBlocking(projectName, false);
+			if (classpathEntries != null) {
+				for (var entry : classpathEntries) {
+					if (entry.getPath() != null) {
+						classpath.add(new java.io.File(entry.getPath()));
+					}
+				}
+			}
+
+			// Use DOMCache to get/parse the compilation unit with bindings
+			URI fileUri = filePath.toUri();
+			return workspace.getDOMCache().getCompilationUnit(
+				fileUri,
+				classpath,
+				shaded.org.eclipse.jdt.core.dom.AST.JLS21,
+				java.util.Collections.emptyMap(), // compiler options
+				true // resolve bindings
+			);
+		} catch (Exception e) {
+			LOG.error("Error parsing file: {}", filePath, e);
+			return null;
+		}
+	}
+
+	/**
+	 * Convert LSP Position (line, character) to string offset.
+	 */
+	private int positionToOffset(String content, Position position) {
+		int line = position.getLine();
+		int character = position.getCharacter();
+
+		String[] lines = content.split("\n", -1);
+		if (line >= lines.length) {
+			return -1;
+		}
+
+		int offset = 0;
+		for (int i = 0; i < line; i++) {
+			offset += lines[i].length() + 1; // +1 for newline
+		}
+
+		if (character > lines[line].length()) {
+			return -1;
+		}
+
+		return offset + character;
+	}
+
+	/**
+	 * Extract Name or SimpleName node from the AST node at cursor.
+	 */
+	private Name extractNameNode(ASTNode node) {
+		if (node instanceof Name) {
+			return (Name) node;
+		}
+
+		// Traverse up to find a Name node
+		ASTNode current = node;
+		while (current != null) {
+			if (current instanceof Name) {
+				return (Name) current;
+			}
+			current = current.getParent();
+		}
+
+		return null;
+	}
+
+	/**
+	 * Find definition locations for the given binding.
+	 */
+	private List<Location> findDefinitionLocations(WorkspaceModel workspace, String projectName,
+			IBinding binding, CompilationUnit currentCU, String filePath, String content) {
+
+		if (binding instanceof ITypeBinding) {
+			return findTypeDefinition(workspace, projectName, (ITypeBinding) binding);
+		} else if (binding instanceof IMethodBinding) {
+			return findMethodDefinition(workspace, projectName, (IMethodBinding) binding);
+		} else if (binding instanceof IVariableBinding) {
+			IVariableBinding varBinding = (IVariableBinding) binding;
+			if (varBinding.isField()) {
+				return findFieldDefinition(workspace, projectName, varBinding);
+			} else {
+				// Local variable or parameter - find in current AST
+				return findLocalDeclaration(currentCU, varBinding, filePath, content);
+			}
+		}
+
+		return Collections.emptyList();
+	}
+
+	/**
+	 * Find type definition using search index.
+	 */
+	private List<Location> findTypeDefinition(WorkspaceModel workspace, String projectName, ITypeBinding typeBinding) {
+		String qualifiedName = typeBinding.getQualifiedName();
+		if (qualifiedName == null || qualifiedName.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		LOG.debug("Searching for type definition: {}", qualifiedName);
+
+		TypePattern pattern = new TypePattern(qualifiedName, SearchPattern.MatchRule.EXACT_MATCH,
+				TypePattern.SearchFor.DECLARATIONS);
+
+		return searchForDefinitions(workspace, projectName, pattern);
+	}
+
+	/**
+	 * Find method definition using search index.
+	 */
+	private List<Location> findMethodDefinition(WorkspaceModel workspace, String projectName, IMethodBinding methodBinding) {
+		String methodName = methodBinding.getName();
+		if (methodName == null || methodName.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		LOG.debug("Searching for method definition: {}", methodName);
+
+		MethodPattern pattern = new MethodPattern(methodName, null, SearchPattern.MatchRule.EXACT_MATCH,
+				MethodPattern.SearchFor.DECLARATIONS);
+
+		return searchForDefinitions(workspace, projectName, pattern);
+	}
+
+	/**
+	 * Find field definition using search index.
+	 */
+	private List<Location> findFieldDefinition(WorkspaceModel workspace, String projectName, IVariableBinding varBinding) {
+		String fieldName = varBinding.getName();
+		if (fieldName == null || fieldName.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		LOG.debug("Searching for field definition: {}", fieldName);
+
+		FieldPattern pattern = new FieldPattern(fieldName, null, SearchPattern.MatchRule.EXACT_MATCH,
+				FieldPattern.SearchFor.DECLARATIONS);
+
+		return searchForDefinitions(workspace, projectName, pattern);
+	}
+
+	/**
+	 * Search for definitions using the search engine.
+	 */
+	private List<Location> searchForDefinitions(WorkspaceModel workspace, String projectName, SearchPattern pattern) {
+		JavaIndex index = workspace.getIndexCache().getIndex();
+		if (index == null) {
+			LOG.warn("Index not available");
+			return Collections.emptyList();
+		}
+
+		List<Location> locations = new ArrayList<>();
+		SearchEngine searchEngine = new SearchEngine();
+
+		searchEngine.search(pattern, index,
+			(Path file) -> {
+				// FileReader callback - read file content
+				try {
+					return Files.readString(file);
+				} catch (IOException e) {
+					LOG.error("Cannot read file: {}", file, e);
+					return null;
+				}
+			},
+			(SearchMatch match) -> {
+				// SearchRequestor callback - convert match to Location
+				if (match.getKind().name().contains("DECLARATION")) {
+					try {
+						Location location = searchMatchToLocation(match);
+						locations.add(location);
+					} catch (Exception e) {
+						LOG.error("Error converting search match to location", e);
+					}
+				}
+			}
+		);
+
+		return locations;
+	}
+
+	/**
+	 * Find local variable or parameter declaration in the current AST.
+	 * Since we're already in the context of a definition request, we have the file path.
+	 */
+	private List<Location> findLocalDeclaration(CompilationUnit cu, IVariableBinding varBinding, String filePath, String content) {
+		// Find the declaring node in the AST
+		ASTNode declaringNode = cu.findDeclaringNode(varBinding);
+		if (declaringNode == null) {
+			LOG.debug("Cannot find declaring node for local variable: {}", varBinding.getName());
+			return Collections.emptyList();
+		}
+
+		// Get the name node from the declaration
+		SimpleName nameNode = null;
+		if (declaringNode instanceof VariableDeclaration) {
+			nameNode = ((VariableDeclaration) declaringNode).getName();
+		} else if (declaringNode instanceof SimpleName) {
+			nameNode = (SimpleName) declaringNode;
+		}
+
+		if (nameNode == null) {
+			return Collections.emptyList();
+		}
+
+		int offset = nameNode.getStartPosition();
+		int length = nameNode.getLength();
+
+		Position start = offsetToPosition(content, offset);
+		Position end = offsetToPosition(content, offset + length);
+
+		String uri = filePathToUri(filePath);
+		Location location = new Location(uri, new Range(start, end));
+		return Collections.singletonList(location);
+	}
+
+	/**
+	 * Convert SearchMatch to LSP Location.
+	 */
+	private Location searchMatchToLocation(SearchMatch match) throws IOException {
+		String filePath = match.getFile().toString();
+		String content = Files.readString(match.getFile());
+
+		int offset = match.getOffset();
+		int length = match.getLength();
+
+		Position start = offsetToPosition(content, offset);
+		Position end = offsetToPosition(content, offset + length);
+
+		String uri = filePathToUri(filePath);
+		return new Location(uri, new Range(start, end));
+	}
+
+	/**
+	 * Convert string offset to LSP Position (line, character).
+	 */
+	private Position offsetToPosition(String content, int offset) {
+		String[] lines = content.split("\n", -1);
+		int currentOffset = 0;
+
+		for (int line = 0; line < lines.length; line++) {
+			int lineLength = lines[line].length();
+			if (currentOffset + lineLength >= offset) {
+				int character = offset - currentOffset;
+				return new Position(line, character);
+			}
+			currentOffset += lineLength + 1; // +1 for newline
+		}
+
+		// Fallback: end of document
+		return new Position(lines.length - 1, lines[lines.length - 1].length());
+	}
+
+	/**
+	 * Convert file path to LSP URI.
+	 */
+	private String filePathToUri(String filePath) {
+		return Paths.get(filePath).toUri().toString();
 	}
 }

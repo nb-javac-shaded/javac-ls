@@ -28,4 +28,5 @@ Export-Package: org.jboss.tools.javac.ls.server,
 Require-Bundle: org.jboss.tools.javac.ls.api;visibility:=reexport,
  org.jboss.tools.javac.ls.parser,
  org.jboss.tools.javac.ls.index,
+ org.jboss.tools.javac.ls.search,
  org.eclipse.lsp4j;bundle-version="1.0.0"
