@@ -7,6 +7,7 @@ Bundle-Version: 0.0.1.qualifier
 Bundle-RequiredExecutionEnvironment: JavaSE-17
 Import-Package: com.google.gson,
  org.eclipse.lsp4j.jsonrpc,
+ org.eclipse.lsp4j.jsonrpc.messages,
  org.jboss.tools.javac.ls.api,
  org.jboss.tools.javac.ls.api.dao,
  org.jboss.tools.rsp.eclipse.core.runtime,

@@ -10,6 +10,7 @@ Bundle-ClassPath: .
 Import-Package: com.google.gson,
  com.google.gson.reflect,
  org.eclipse.lsp4j.jsonrpc,
+ org.eclipse.lsp4j.jsonrpc.messages,
  org.eclipse.lsp4j.jsonrpc.services,
  org.jboss.tools.javac.ls.api,
  org.jboss.tools.javac.ls.api.dao,

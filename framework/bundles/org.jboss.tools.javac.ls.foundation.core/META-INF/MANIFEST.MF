@@ -4,7 +4,7 @@ Bundle-Name: org.jboss.tools.javac.ls.foundation.core
 Bundle-SymbolicName: org.jboss.tools.javac.ls.foundation.core
 Bundle-Version: 0.0.1.qualifier
 Bundle-Activator: org.jboss.tools.javac.ls.foundation.core.FoundationCoreActivator
-Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Bundle-RequiredExecutionEnvironment: JavaSE-17
 Import-Package: org.jboss.tools.javac.ls.api.dao,
  org.jboss.tools.rsp.eclipse.core.runtime,
  org.jboss.tools.rsp.eclipse.debug.core,
