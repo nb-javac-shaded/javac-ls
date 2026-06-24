@@ -8,6 +8,8 @@
  ******************************************************************************/
 package org.jboss.tools.javac.ls.server;
 
+import java.io.File;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -15,12 +17,12 @@ import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import org.jboss.tools.javac.ls.api.JavacLSServer;
 import org.jboss.tools.javac.ls.api.dao.DiagnosticList;
-import org.jboss.tools.javac.ls.api.dao.ProjectInfo;
 import org.jboss.tools.javac.ls.api.dao.Status;
 import org.jboss.tools.javac.ls.server.model.WorkspaceModel;
 import org.slf4j.Logger;
@@ -75,61 +77,6 @@ public class JavacLSServerImpl implements JavacLSServer {
 	}
 
 	@Override
-	public CompletableFuture<Status> addProject(ProjectInfo project) {
-		LOG.info("Received addProject request: {}", project);
-
-		if (project == null || project.getName() == null || project.getPath() == null) {
-			return CompletableFuture.completedFuture(
-				new Status(Status.ERROR, "javac-ls", "Project name and path are required"));
-		}
-
-		WorkspaceModel workspace = launcher.getWorkspaceModel();
-		if (workspace == null) {
-			return CompletableFuture.completedFuture(
-				new Status(Status.ERROR, "javac-ls", "Workspace not initialized"));
-		}
-
-		// Add project to workspace model (triggers projectAdded event)
-		boolean added = workspace.addProject(project.getName(), project.getPath());
-		if (!added) {
-			return CompletableFuture.completedFuture(
-				new Status(Status.ERROR, "javac-ls", "Project already exists: " + project.getName()));
-		}
-
-		// Index the new project in background
-		launcher.indexProjectAsync(project.getName());
-
-		return CompletableFuture.completedFuture(
-			new Status(Status.OK, "javac-ls", "Project added and indexing started: " + project.getName()));
-	}
-
-	@Override
-	public CompletableFuture<Status> removeProject(String projectName) {
-		LOG.info("Received removeProject request: {}", projectName);
-
-		if (projectName == null || projectName.trim().isEmpty()) {
-			return CompletableFuture.completedFuture(
-				new Status(Status.ERROR, "javac-ls", "Project name is required"));
-		}
-
-		WorkspaceModel workspace = launcher.getWorkspaceModel();
-		if (workspace == null) {
-			return CompletableFuture.completedFuture(
-				new Status(Status.ERROR, "javac-ls", "Workspace not initialized"));
-		}
-
-		// Remove project from workspace model (triggers projectRemoved event and cleans up index)
-		boolean removed = workspace.removeProject(projectName);
-		if (!removed) {
-			return CompletableFuture.completedFuture(
-				new Status(Status.ERROR, "javac-ls", "Project not found: " + projectName));
-		}
-
-		return CompletableFuture.completedFuture(
-			new Status(Status.OK, "javac-ls", "Project removed: " + projectName));
-	}
-
-	@Override
 	public CompletableFuture<DiagnosticList> getProjectDiagnostics(String projectName) {
 		LOG.debug("Received getProjectDiagnostics request: {}", projectName);
 
@@ -179,6 +126,35 @@ public class JavacLSServerImpl implements JavacLSServer {
 	public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
 		LOG.info("LSP initialize request received");
 
+		WorkspaceModel workspace = launcher.getWorkspaceModel();
+		if (workspace == null) {
+			LOG.warn("Workspace model not initialized");
+		} else {
+			// Initialize workspace from workspaceFolders (LSP 3.6+)
+			if (params.getWorkspaceFolders() != null && !params.getWorkspaceFolders().isEmpty()) {
+				for (WorkspaceFolder folder : params.getWorkspaceFolders()) {
+					addWorkspaceFolder(workspace, folder.getName(), folder.getUri());
+				}
+			}
+			// Fall back to rootUri (LSP 3.0+) if no workspace folders provided
+			else if (params.getRootUri() != null) {
+				String rootUri = params.getRootUri();
+				String projectName = extractProjectName(rootUri);
+				addWorkspaceFolder(workspace, projectName, rootUri);
+			}
+			// Fall back to deprecated rootPath if neither are provided
+			else if (params.getRootPath() != null) {
+				File rootPath = new File(params.getRootPath());
+				String projectName = rootPath.getName();
+				workspace.addProject(projectName, rootPath.getAbsolutePath());
+				launcher.indexProjectAsync(projectName);
+				LOG.info("Added workspace from rootPath: {} at {}", projectName, rootPath);
+			}
+			else {
+				LOG.info("No workspace folders, rootUri, or rootPath provided in initialize request");
+			}
+		}
+
 		ServerCapabilities capabilities = new ServerCapabilities();
 
 		// Advertise diagnostic support
@@ -188,6 +164,39 @@ public class JavacLSServerImpl implements JavacLSServer {
 
 		InitializeResult result = new InitializeResult(capabilities);
 		return CompletableFuture.completedFuture(result);
+	}
+
+	private void addWorkspaceFolder(WorkspaceModel workspace, String projectName, String uri) {
+		try {
+			URI parsedUri = URI.create(uri);
+			File path = new File(parsedUri);
+
+			LOG.info("Adding workspace folder: {} at {}", projectName, path);
+
+			// Add project to workspace model
+			boolean added = workspace.addProject(projectName, path.getAbsolutePath());
+			if (added) {
+				// Index the project in background
+				launcher.indexProjectAsync(projectName);
+			} else {
+				LOG.warn("Failed to add workspace folder (already exists?): {}", projectName);
+			}
+		} catch (Exception e) {
+			LOG.error("Failed to add workspace folder: {}", uri, e);
+		}
+	}
+
+	private String extractProjectName(String uri) {
+		try {
+			URI parsedUri = URI.create(uri);
+			File path = new File(parsedUri);
+			return path.getName();
+		} catch (Exception e) {
+			// Fall back to using the URI path
+			String path = uri.replaceFirst("^file://", "");
+			int lastSlash = path.lastIndexOf('/');
+			return lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
+		}
 	}
 
 	@Override

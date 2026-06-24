@@ -57,15 +57,13 @@ import shaded.org.eclipse.jdt.internal.compiler.problem.ProblemSeverities;
 
 /**
  * Manages the workspace model - mapping project names to filesystem paths.
- * Persisted as JSON in the workspace directory.
+ * Projects are managed in-memory and initialized via LSP workspaceFolders.
  */
 public class WorkspaceModel {
 	private static final Logger LOG = LoggerFactory.getLogger(WorkspaceModel.class);
-	private static final String WORKSPACE_FILE = "workspace.json";
 	private static final String INDEX_DIR = "index";
 
 	private final File workspaceDir;
-	private final File workspaceFile;
 	private final Map<String, WorkspaceProject> projects;
 	private final Gson gson;
 	private final ClasspathCache classpathCache;
@@ -80,7 +78,6 @@ public class WorkspaceModel {
 
 	public WorkspaceModel(File workspaceDir) {
 		this.workspaceDir = workspaceDir;
-		this.workspaceFile = new File(workspaceDir, WORKSPACE_FILE);
 		this.projects = new HashMap<>();
 		this.gson = new GsonBuilder().setPrettyPrinting().create();
 		this.classpathCache = new ClasspathCache(workspaceDir);
@@ -102,7 +99,6 @@ public class WorkspaceModel {
 
 		// Load cached data
 		setInitializationState(InitializationState.STATE_LOADING_CACHE);
-		load();
 		loadIndex();
 
 		// Start periodic file change scanner (every 30 seconds)
@@ -185,7 +181,6 @@ public class WorkspaceModel {
 
 		WorkspaceProject project = new WorkspaceProject(name, path);
 		projects.put(name, project);
-		save();
 		LOG.info("Added project '{}' at path: {}", name, path);
 		notifyProjectAdded(project);
 		return true;
@@ -205,7 +200,6 @@ public class WorkspaceModel {
 			// Clean up index entries for this project
 			cleanupProjectIndex(removed);
 
-			save();
 			LOG.info("Removed project '{}' from workspace", name);
 			notifyProjectRemoved(removed);
 			return true;
@@ -307,60 +301,10 @@ public class WorkspaceModel {
 	}
 
 	/**
-	 * Load the workspace from disk.
-	 */
-	private void load() {
-		if (!workspaceFile.exists()) {
-			LOG.info("Workspace file does not exist, starting with empty workspace: {}", workspaceFile.getAbsolutePath());
-			return;
-		}
-
-		try (FileReader reader = new FileReader(workspaceFile)) {
-			List<WorkspaceProject> loadedProjects = gson.fromJson(reader,
-					new TypeToken<List<WorkspaceProject>>(){}.getType());
-
-			if (loadedProjects != null) {
-				projects.clear();
-				for (WorkspaceProject project : loadedProjects) {
-					projects.put(project.getName(), project);
-				}
-				LOG.info("Loaded {} projects from workspace file", projects.size());
-			}
-		} catch (IOException e) {
-			LOG.error("Error loading workspace from {}", workspaceFile.getAbsolutePath(), e);
-		} catch (Exception e) {
-			LOG.error("Error parsing workspace file {}", workspaceFile.getAbsolutePath(), e);
-		}
-	}
-
-	/**
 	 * Load the index from disk.
 	 */
 	private void loadIndex() {
 		indexCache.load();
-	}
-
-	/**
-	 * Save the workspace to disk.
-	 */
-	private void save() {
-		// Ensure workspace directory exists
-		if (!workspaceDir.exists()) {
-			if (!workspaceDir.mkdirs()) {
-				LOG.error("Failed to create workspace directory: {}", workspaceDir.getAbsolutePath());
-				return;
-			}
-		}
-
-		try (FileWriter writer = new FileWriter(workspaceFile)) {
-			List<WorkspaceProject> projectList = new ArrayList<>(projects.values());
-			// Sort by name for consistent output
-			projectList.sort((p1, p2) -> p1.getName().compareTo(p2.getName()));
-			gson.toJson(projectList, writer);
-			LOG.debug("Saved {} projects to workspace file", projects.size());
-		} catch (IOException e) {
-			LOG.error("Error saving workspace to {}", workspaceFile.getAbsolutePath(), e);
-		}
 	}
 
 	/**
@@ -370,15 +314,6 @@ public class WorkspaceModel {
 	 */
 	public File getWorkspaceDirectory() {
 		return workspaceDir;
-	}
-
-	/**
-	 * Get the workspace file path.
-	 *
-	 * @return the workspace file
-	 */
-	public File getWorkspaceFile() {
-		return workspaceFile;
 	}
 
 	/**

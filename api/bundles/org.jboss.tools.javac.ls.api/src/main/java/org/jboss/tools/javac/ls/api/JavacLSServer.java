@@ -15,7 +15,6 @@ import org.eclipse.lsp4j.jsonrpc.services.JsonRequest;
 import org.eclipse.lsp4j.jsonrpc.services.JsonSegment;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.jboss.tools.javac.ls.api.dao.DiagnosticList;
-import org.jboss.tools.javac.ls.api.dao.ProjectInfo;
 import org.jboss.tools.javac.ls.api.dao.Status;
 
 @JsonSegment("server")
@@ -35,27 +34,6 @@ public interface JavacLSServer extends LanguageServer {
 	 */
 	@JsonNotification
 	void shutdownServer();
-
-	/**
-	 * The `server/addProject` request adds a project to the workspace and begins indexing it.
-	 * The workspace initialization state will change to INDEXING while the project is being indexed,
-	 * then return to READY when complete.
-	 *
-	 * @param project the project to add (name and path)
-	 * @return status indicating success or failure
-	 */
-	@JsonRequest
-	CompletableFuture<Status> addProject(ProjectInfo project);
-
-	/**
-	 * The `server/removeProject` request removes a project from the workspace
-	 * and cleans up its index entries.
-	 *
-	 * @param projectName the name of the project to remove
-	 * @return status indicating success or failure
-	 */
-	@JsonRequest
-	CompletableFuture<Status> removeProject(String projectName);
 
 	/**
 	 * The `server/getProjectDiagnostics` request returns all compilation errors

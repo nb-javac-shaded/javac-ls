@@ -57,48 +57,6 @@ public class JavacLsServerLauncherTest {
 	}
 
 	@Test
-	public void testWorkspaceDirectoryOverrideIsRespected() throws IOException {
-		// Create a custom workspace directory
-		File customWorkspace = new File(tempWorkspaceDir, "custom-workspace");
-		customWorkspace.mkdirs();
-
-		// Create a project in the custom workspace
-		File projectDir = new File(customWorkspace, "test-project");
-		projectDir.mkdirs();
-		File srcDir = new File(projectDir, "src");
-		srcDir.mkdirs();
-
-		// Write a simple .classpath file so it's recognized as Eclipse project
-		File classpathFile = new File(projectDir, ".classpath");
-		Files.writeString(classpathFile.toPath(), """
-				<?xml version="1.0" encoding="UTF-8"?>
-				<classpath>
-					<classpathentry kind="src" path="src"/>
-					<classpathentry kind="output" path="bin"/>
-				</classpath>""");
-
-		// Add project to workspace.json
-		File workspaceJson = new File(customWorkspace, "workspace.json");
-		Files.writeString(workspaceJson.toPath(), """
-				[
-				  {
-				    "name": "test-project",
-				    "path": "%s"
-				  }
-				]""".formatted(projectDir.getAbsolutePath().replace("\\", "\\\\")));
-
-		// Create launcher that overrides workspace directory
-		launcher = new TestServerLauncher(customWorkspace, true);
-		launcher.initialize();
-
-		// Verify workspace model was created and loaded the project
-		WorkspaceModel workspace = launcher.getWorkspaceModel();
-		assertNotNull("Workspace model should be created", workspace);
-		assertTrue("Workspace should have loaded the project", workspace.hasProject("test-project"));
-		assertEquals("Should have 1 project", 1, workspace.getProjectCount());
-	}
-
-	@Test
 	public void testStartupSyncOverrideIsRespected() throws IOException {
 		// Create launcher with sync=true
 		launcher = new TestServerLauncher(tempWorkspaceDir, true);
@@ -126,42 +84,6 @@ public class JavacLsServerLauncherTest {
 		int state = workspace.getInitializationState();
 		assertTrue("Workspace should be in valid state",
 				state >= InitializationState.STATE_LOADING_CACHE);
-	}
-
-	@Test
-	public void testExistingWorkspaceIsLoaded() throws IOException {
-		// Create a workspace with multiple projects
-		File project1 = new File(tempWorkspaceDir, "project1");
-		project1.mkdirs();
-		File project2 = new File(tempWorkspaceDir, "project2");
-		project2.mkdirs();
-
-		// Write workspace.json with existing projects
-		File workspaceJson = new File(tempWorkspaceDir, "workspace.json");
-		Files.writeString(workspaceJson.toPath(), """
-				[
-				  {
-				    "name": "project1",
-				    "path": "%s"
-				  },
-				  {
-				    "name": "project2",
-				    "path": "%s"
-				  }
-				]""".formatted(
-						project1.getAbsolutePath().replace("\\", "\\\\"),
-						project2.getAbsolutePath().replace("\\", "\\\\")));
-
-		// Create launcher
-		launcher = new TestServerLauncher(tempWorkspaceDir, true);
-		launcher.initialize();
-
-		// Verify both projects were loaded
-		WorkspaceModel workspace = launcher.getWorkspaceModel();
-		assertNotNull("Workspace model should be created", workspace);
-		assertEquals("Should have loaded 2 projects", 2, workspace.getProjectCount());
-		assertTrue("Should have project1", workspace.hasProject("project1"));
-		assertTrue("Should have project2", workspace.hasProject("project2"));
 	}
 
 	@Test
