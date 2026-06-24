@@ -287,15 +287,26 @@ public class JavacTextDocumentService implements TextDocumentService {
 	 */
 	private CompilationUnit parseFileWithBindings(WorkspaceModel workspace, String projectName, Path filePath) {
 		try {
-			// Get classpath for the project
+			// Get classpath and sourcepath for the project
 			List<java.io.File> classpath = new ArrayList<>();
+			List<String> sourcepath = new ArrayList<>();
 			var classpathEntries = workspace.getProjectClasspathNonBlocking(projectName, false);
 			if (classpathEntries != null) {
 				for (var entry : classpathEntries) {
 					if (entry.getPath() != null) {
-						classpath.add(new java.io.File(entry.getPath()));
+						if (entry.getType() == org.jboss.tools.javac.ls.server.model.classpath.IJavacClasspathEntry.EntryType.SOURCE) {
+							sourcepath.add(entry.getPath());
+						} else {
+							classpath.add(new java.io.File(entry.getPath()));
+						}
 					}
 				}
+			}
+
+			// Configure compiler options with sourcepath
+			java.util.Map<String, String> compilerOptions = new java.util.HashMap<>();
+			if (!sourcepath.isEmpty()) {
+				compilerOptions.put("javac.sourcepath", String.join(java.io.File.pathSeparator, sourcepath));
 			}
 
 			// Use DOMCache to get/parse the compilation unit with bindings
@@ -304,7 +315,7 @@ public class JavacTextDocumentService implements TextDocumentService {
 				fileUri,
 				classpath,
 				shaded.org.eclipse.jdt.core.dom.AST.JLS21,
-				java.util.Collections.emptyMap(), // compiler options
+				compilerOptions,
 				true // resolve bindings
 			);
 		} catch (Exception e) {

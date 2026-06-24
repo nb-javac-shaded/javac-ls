@@ -281,6 +281,12 @@ public class JavacDOMParser {
 			javacOptions.put(Option.TARGET, target);
 		}
 
+		// Sourcepath - where javac can find other source files in the project
+		String sourcepath = compilerOptions.get("javac.sourcepath");
+		if (sourcepath != null && !sourcepath.isEmpty()) {
+			javacOptions.put("-sourcepath", sourcepath);
+		}
+
 		// Preview features
 		if (JavaCoreConstants.ENABLED.equals(compilerOptions.get("shaded.org.eclipse.jdt.core.compiler.problem.enablePreviewFeatures"))) {
 			javacOptions.put(Option.PREVIEW, Boolean.toString(true));

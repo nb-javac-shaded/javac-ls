@@ -301,6 +301,60 @@ public class WorkspaceModel {
 	}
 
 	/**
+	 * Holder for separated classpath and sourcepath entries.
+	 */
+	private static class ClasspathAndSourcepath {
+		final List<File> classpath;
+		final List<String> sourcepath;
+
+		ClasspathAndSourcepath(List<File> classpath, List<String> sourcepath) {
+			this.classpath = classpath;
+			this.sourcepath = sourcepath;
+		}
+	}
+
+	/**
+	 * Get classpath and sourcepath for a project, properly separated.
+	 * SOURCE entries go to sourcepath, LIBRARY entries go to classpath.
+	 *
+	 * @param projectName the project name
+	 * @return separated classpath and sourcepath
+	 */
+	private ClasspathAndSourcepath getClasspathAndSourcepath(String projectName) {
+		List<File> classpath = new ArrayList<>();
+		List<String> sourcepath = new ArrayList<>();
+
+		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+		if (classpathEntries != null) {
+			for (IJavacClasspathEntry entry : classpathEntries) {
+				if (entry.getPath() != null) {
+					if (entry.getType() == IJavacClasspathEntry.EntryType.SOURCE) {
+						sourcepath.add(entry.getPath());
+					} else {
+						classpath.add(new File(entry.getPath()));
+					}
+				}
+			}
+		}
+
+		return new ClasspathAndSourcepath(classpath, sourcepath);
+	}
+
+	/**
+	 * Build compiler options map with sourcepath configured.
+	 *
+	 * @param sourcepath the source paths
+	 * @return compiler options map
+	 */
+	private Map<String, String> buildCompilerOptions(List<String> sourcepath) {
+		Map<String, String> options = new HashMap<>();
+		if (sourcepath != null && !sourcepath.isEmpty()) {
+			options.put("javac.sourcepath", String.join(File.pathSeparator, sourcepath));
+		}
+		return options;
+	}
+
+	/**
 	 * Load the index from disk.
 	 */
 	private void loadIndex() {
@@ -669,14 +723,9 @@ public class WorkspaceModel {
 			return 0;
 		}
 
-		// Get classpath for parsing (non-blocking to avoid deadlock)
-		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, true);
-		List<File> classpath = new ArrayList<>();
-		for (IJavacClasspathEntry entry : classpathEntries) {
-			if (entry.getPath() != null) {
-				classpath.add(new File(entry.getPath()));
-			}
-		}
+		// Get classpath and sourcepath for parsing (non-blocking to avoid deadlock)
+		ClasspathAndSourcepath paths = getClasspathAndSourcepath(projectName);
+		Map<String, String> compilerOptions = buildCompilerOptions(paths.sourcepath);
 
 		// Parse and index files in batches (for memory efficiency)
 		int filesIndexed = 0;
@@ -694,7 +743,7 @@ public class WorkspaceModel {
 			// Process each batch
 			for (List<Path> batch : batches) {
 				try {
-					int batchIndexed = indexBatchWithBindings(batch, classpath, index);
+					int batchIndexed = indexBatchWithBindings(batch, paths.classpath, index);
 					filesIndexed += batchIndexed;
 				} catch (Exception e) {
 					LOG.error("Failed to index batch of {} files, will try individually", batch.size(), e);
@@ -702,7 +751,7 @@ public class WorkspaceModel {
 					// Fallback: try each file individually
 					for (Path javaFile : batch) {
 						try {
-							indexFileWithBindings(javaFile, classpath, index);
+							indexFileWithBindings(projectName, javaFile, paths.classpath, compilerOptions, index);
 							filesIndexed++;
 						} catch (Exception e2) {
 							LOG.error("Failed to index file with bindings: {}", javaFile, e2);
@@ -804,11 +853,14 @@ public class WorkspaceModel {
 	 * Index a single Java file with full binding resolution.
 	 * Parses with bindings, caches the DOM, and populates the index.
 	 *
+	 * @param projectName the project name
 	 * @param javaFile the Java file to index
 	 * @param classpath the classpath for parsing
+	 * @param compilerOptions compiler options (including sourcepath)
 	 * @param index the index to populate
 	 */
-	private void indexFileWithBindings(Path javaFile, List<File> classpath, JavaIndex index) {
+	private void indexFileWithBindings(String projectName, Path javaFile, List<File> classpath,
+			Map<String, String> compilerOptions, JavaIndex index) {
 		URI fileUri = javaFile.toUri();
 
 		// Parse with bindings and cache the result
@@ -816,7 +868,7 @@ public class WorkspaceModel {
 				fileUri,
 				classpath,
 				AST.JLS21,
-				null, // compiler options
+				compilerOptions,
 				true  // resolve bindings
 		);
 
@@ -957,18 +1009,12 @@ public class WorkspaceModel {
 
 			LOG.info("Rebatching {} individually-parsed files", filesToRebatch.size());
 
-			// Get classpath
-			ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
-			List<File> classpath = new ArrayList<>();
-			for (IJavacClasspathEntry entry : classpathEntries) {
-				if (entry.getPath() != null) {
-					classpath.add(new File(entry.getPath()));
-				}
-			}
+			// Get classpath and sourcepath
+			ClasspathAndSourcepath paths = getClasspathAndSourcepath(projectName);
 
 			// Re-parse all files together as a batch
 			JavaIndex index = indexCache.getIndex();
-			int rebatched = indexBatchWithBindings(new ArrayList<>(filesToRebatch), classpath, index);
+			int rebatched = indexBatchWithBindings(new ArrayList<>(filesToRebatch), paths.classpath, index);
 
 			// Clear the tracking set
 			indexCache.clearIndividuallyParsedFiles();
@@ -1000,14 +1046,9 @@ public class WorkspaceModel {
 
 		LOG.debug("Reparsing {} files in project {}", files.size(), projectName);
 
-		// Get classpath for parsing
-		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
-		List<File> classpath = new ArrayList<>();
-		for (IJavacClasspathEntry entry : classpathEntries) {
-			if (entry.getPath() != null) {
-				classpath.add(new File(entry.getPath()));
-			}
-		}
+		// Get classpath and sourcepath for parsing
+		ClasspathAndSourcepath paths = getClasspathAndSourcepath(projectName);
+		Map<String, String> compilerOptions = buildCompilerOptions(paths.sourcepath);
 
 		// Remove files from index and reparse them
 		indexCache.lockWrite();
@@ -1021,7 +1062,7 @@ public class WorkspaceModel {
 
 			// Reparse files individually (for fast response)
 			for (Path file : files) {
-				indexFileWithBindings(file, classpath, index);
+				indexFileWithBindings(projectName, file, paths.classpath, compilerOptions, index);
 				indexCache.trackIndividuallyParsedFile(file);
 
 				// Notify listeners about diagnostics change after reparsing
