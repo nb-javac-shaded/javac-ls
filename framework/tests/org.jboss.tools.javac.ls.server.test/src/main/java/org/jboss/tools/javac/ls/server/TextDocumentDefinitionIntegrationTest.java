@@ -61,6 +61,18 @@ public class TextDocumentDefinitionIntegrationTest {
 		srcDir = new File(projectDir, "src");
 		srcDir.mkdirs();
 
+		// Create .classpath file so Eclipse discoverer accepts the project
+		File classpathFile = new File(projectDir, ".classpath");
+		String classpathContent = """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<classpath>
+					<classpathentry kind="src" path="src"/>
+					<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+					<classpathentry kind="output" path="bin"/>
+				</classpath>
+				""";
+		Files.write(classpathFile.toPath(), classpathContent.getBytes());
+
 		// Add project to workspace
 		workspaceModel.addProject("testproject", projectDir.getAbsolutePath());
 	}
