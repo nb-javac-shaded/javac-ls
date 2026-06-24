@@ -139,6 +139,21 @@ public class JavacDOMParser {
 				}
 			}
 
+			// Configure sourcepath if provided
+			String sourcepathStr = compilerOptions.get("javac.sourcepath");
+			if (sourcepathStr != null && !sourcepathStr.isEmpty()) {
+				try {
+					String[] paths = sourcepathStr.split(File.pathSeparator);
+					List<File> sourcepath = new ArrayList<>();
+					for (String path : paths) {
+						sourcepath.add(new File(path));
+					}
+					fileManager.setLocation(StandardLocation.SOURCE_PATH, sourcepath);
+				} catch (IOException ex) {
+					LOG.error("Failed to set sourcepath", ex);
+				}
+			}
+
 			// Create virtual file object from source
 			JavaFileObject fileObject = new VirtualSourceFile(fileName, sourceContent);
 			fileManager.cache(fileObject, CharBuffer.wrap(sourceContent));
