@@ -316,6 +316,7 @@ public class WorkspaceModel {
 	/**
 	 * Get classpath and sourcepath for a project, properly separated.
 	 * SOURCE entries go to sourcepath, LIBRARY entries go to classpath.
+	 * This method performs blocking classpath discovery if needed.
 	 *
 	 * @param projectName the project name
 	 * @return separated classpath and sourcepath
@@ -324,7 +325,8 @@ public class WorkspaceModel {
 		List<File> classpath = new ArrayList<>();
 		List<String> sourcepath = new ArrayList<>();
 
-		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+		// Use blocking classpath discovery to ensure we have valid results
+		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspath(projectName);
 		if (classpathEntries != null) {
 			for (IJavacClasspathEntry entry : classpathEntries) {
 				if (entry.getPath() != null) {
