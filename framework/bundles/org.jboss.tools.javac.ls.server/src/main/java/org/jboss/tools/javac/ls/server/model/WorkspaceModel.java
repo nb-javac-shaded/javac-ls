@@ -25,11 +25,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.jboss.tools.javac.ls.api.dao.Diagnostic;
@@ -75,6 +78,15 @@ public class WorkspaceModel {
 	private final Set<String> projectsCurrentlyScanning;
 	private final List<WorkspaceModelListener> listeners;
 	private volatile int initializationState = InitializationState.STATE_NOT_STARTED;
+
+	// Batch tracking (in-memory only, rebuilt on startup)
+	private final Map<Path, Integer> fileToOriginalBatch = new ConcurrentHashMap<>();
+	private final Map<Integer, BatchInfo> batches = new ConcurrentHashMap<>();
+	private final AtomicInteger nextBatchId = new AtomicInteger(0);
+
+	// Batch size constants
+	private static final int TARGET_BATCH_SIZE = 200;  // Target during initial indexing
+	private static final int MAX_BATCH_SIZE = 250;     // Split threshold
 
 	public WorkspaceModel(File workspaceDir) {
 		this.workspaceDir = workspaceDir;
@@ -738,20 +750,30 @@ public class WorkspaceModel {
 
 			// Create package-aware batches
 			PackageAwareBatcher batcher = new PackageAwareBatcher();
-			List<List<Path>> batches = batcher.createBatches(javaFiles);
+			List<List<Path>> batchGroups = batcher.createBatches(javaFiles);
 
-			LOG.info("Created {} batches for {} files", batches.size(), javaFiles.size());
+			LOG.info("Created {} batches for {} files", batchGroups.size(), javaFiles.size());
 
-			// Process each batch
-			for (List<Path> batch : batches) {
+			// Process each batch and track it
+			for (List<Path> batchFiles : batchGroups) {
+				int batchId = nextBatchId.getAndIncrement();
+				BatchInfo batchInfo = new BatchInfo(batchId);
+				batchInfo.files.addAll(batchFiles);
+				this.batches.put(batchId, batchInfo);
+
+				// Map each file to its batch
+				for (Path file : batchFiles) {
+					fileToOriginalBatch.put(file, batchId);
+				}
+
 				try {
-					int batchIndexed = indexBatchWithBindings(batch, paths.classpath, index);
+					int batchIndexed = indexBatchWithBindings(batchFiles, paths.classpath, index);
 					filesIndexed += batchIndexed;
 				} catch (Exception e) {
-					LOG.error("Failed to index batch of {} files, will try individually", batch.size(), e);
+					LOG.error("Failed to index batch {} of {} files, will try individually", batchId, batchFiles.size(), e);
 
 					// Fallback: try each file individually
-					for (Path javaFile : batch) {
+					for (Path javaFile : batchFiles) {
 						try {
 							indexFileWithBindings(projectName, javaFile, paths.classpath, compilerOptions, index);
 							filesIndexed++;
@@ -988,40 +1010,318 @@ public class WorkspaceModel {
 	}
 
 	/**
-	 * Rebatch files that were parsed individually.
-	 * This consolidates memory by re-parsing multiple individually-parsed files
-	 * together in a single batch, allowing the old individual parse Contexts to be GC'd.
+	 * Rebatch dirty batches to consolidate memory.
+	 * Re-parses entire batches that contain individually-parsed files,
+	 * allowing the old individual parse Contexts to be GC'd while maintaining
+	 * package coherence.
 	 *
 	 * @param projectName the project name
 	 */
-	private void rebatchIndividuallyParsedFiles(String projectName) {
+	private void rebatchDirtyBatches(String projectName) {
 		WorkspaceProject project = projects.get(projectName);
 		if (project == null) {
 			LOG.warn("Cannot rebatch for unknown project: {}", projectName);
 			return;
 		}
 
+		ClasspathAndSourcepath paths = getClasspathAndSourcepath(projectName);
+		JavaIndex index = indexCache.getIndex();
+
 		indexCache.lockWrite();
 		try {
-			// Get the files that need rebatching
-			Set<Path> filesToRebatch = new HashSet<>(indexCache.getIndividuallyParsedFiles());
-			if (filesToRebatch.isEmpty()) {
+			// Collect dirty batches
+			List<BatchInfo> dirtyBatches = batches.values().stream()
+				.filter(b -> b.isDirty)
+				.collect(Collectors.toList());
+
+			if (dirtyBatches.isEmpty()) {
+				LOG.debug("No dirty batches to rebatch");
 				return;
 			}
 
-			LOG.info("Rebatching {} individually-parsed files", filesToRebatch.size());
+			LOG.info("Rebatching {} dirty batches", dirtyBatches.size());
 
-			// Get classpath and sourcepath
-			ClasspathAndSourcepath paths = getClasspathAndSourcepath(projectName);
+			for (BatchInfo dirtyBatch : dirtyBatches) {
+				if (dirtyBatch.needsSplit) {
+					splitBatch(dirtyBatch, paths, index);
+				} else {
+					rebatchSingleBatch(dirtyBatch, paths, index);
+				}
+			}
 
-			// Re-parse all files together as a batch
-			JavaIndex index = indexCache.getIndex();
-			int rebatched = indexBatchWithBindings(new ArrayList<>(filesToRebatch), paths.classpath, index);
-
-			// Clear the tracking set
+			// Clear individually-parsed tracking
 			indexCache.clearIndividuallyParsedFiles();
 
-			LOG.info("Rebatched {} files successfully", rebatched);
+		} finally {
+			indexCache.unlockWrite();
+		}
+	}
+
+	/**
+	 * Re-parse a single batch together.
+	 */
+	private void rebatchSingleBatch(BatchInfo batch, ClasspathAndSourcepath paths, JavaIndex index) {
+		LOG.info("Rebatching batch {} ({} files)", batch.id, batch.files.size());
+
+		// Re-parse entire batch together
+		indexBatchWithBindings(new ArrayList<>(batch.files), paths.classpath, index);
+
+		batch.isDirty = false;
+		batch.needsSplit = false;
+	}
+
+	/**
+	 * Split a batch that exceeds MAX_BATCH_SIZE using package-aware batching.
+	 */
+	private void splitBatch(BatchInfo batch, ClasspathAndSourcepath paths, JavaIndex index) {
+		LOG.info("Splitting batch {} ({} files exceeds MAX_BATCH_SIZE {})",
+			batch.id, batch.files.size(), MAX_BATCH_SIZE);
+
+		// Use PackageAwareBatcher to split
+		PackageAwareBatcher batcher = new PackageAwareBatcher();
+		List<List<Path>> newBatches = batcher.createBatches(new ArrayList<>(batch.files));
+
+		LOG.info("Split batch {} into {} new batches", batch.id, newBatches.size());
+
+		// Remove old batch
+		batches.remove(batch.id);
+
+		// Create new batches
+		for (List<Path> newBatchFiles : newBatches) {
+			int newBatchId = nextBatchId.getAndIncrement();
+			BatchInfo newBatch = new BatchInfo(newBatchId);
+			newBatch.files.addAll(newBatchFiles);
+			batches.put(newBatchId, newBatch);
+
+			// Update file → batch mappings
+			for (Path file : newBatchFiles) {
+				fileToOriginalBatch.put(file, newBatchId);
+			}
+
+			// Parse new batch
+			indexBatchWithBindings(newBatchFiles, paths.classpath, index);
+		}
+	}
+
+	/**
+	 * Find a suitable batch for a new file based on package.
+	 * Returns null if no suitable batch found.
+	 */
+	private Integer findBatchForPackage(Path file) {
+		String packageName = extractPackageName(file);
+
+		// Find batch with same package that has room
+		for (BatchInfo batch : batches.values()) {
+			if (batch.files.size() < MAX_BATCH_SIZE) {
+				// Check if any file in batch shares package
+				for (Path batchFile : batch.files) {
+					if (extractPackageName(batchFile).equals(packageName)) {
+						return batch.id;
+					}
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Extract package name from file path.
+	 * Delegates to PackageAwareBatcher's logic.
+	 */
+	private String extractPackageName(Path file) {
+		Path parent = file.getParent();
+		if (parent == null) {
+			return "";
+		}
+
+		// Convert path to string and look for common patterns
+		String pathStr = parent.toString();
+
+		// Look for common source roots
+		int srcIndex = findSourceRoot(pathStr);
+		if (srcIndex >= 0) {
+			// Extract everything after source root
+			String afterSrc = pathStr.substring(srcIndex);
+			// Convert path separators to dots
+			return afterSrc.replace('/', '.').replace('\\', '.');
+		}
+
+		// Fallback: use last 2-3 path components as package
+		int componentCount = 0;
+		StringBuilder pkg = new StringBuilder();
+		for (int i = parent.getNameCount() - 1; i >= 0 && componentCount < 3; i--) {
+			String component = parent.getName(i).toString();
+			if (pkg.length() > 0) {
+				pkg.insert(0, '.');
+			}
+			pkg.insert(0, component);
+			componentCount++;
+		}
+
+		return pkg.toString();
+	}
+
+	/**
+	 * Find the index of source root in path string.
+	 */
+	private int findSourceRoot(String pathStr) {
+		String[] patterns = {
+			"/src/main/java/",
+			"/src/test/java/",
+			"\\src\\main\\java\\",
+			"\\src\\test\\java\\",
+			"/src/",
+			"\\src\\",
+			"/source/",
+			"\\source\\"
+		};
+
+		for (String pattern : patterns) {
+			int index = pathStr.indexOf(pattern);
+			if (index >= 0) {
+				return index + pattern.length();
+			}
+		}
+
+		return -1;
+	}
+
+	/**
+	 * Try to merge a batch that has become small due to file deletions.
+	 */
+	private void tryMergeBatch(BatchInfo smallBatch) {
+		if (smallBatch.files.isEmpty()) {
+			batches.remove(smallBatch.id);
+			return;
+		}
+
+		// Find a merge candidate: same package, combined size < MAX_BATCH_SIZE
+		String packageName = extractPackageName(smallBatch.files.iterator().next());
+
+		for (BatchInfo candidate : batches.values()) {
+			if (candidate.id == smallBatch.id) {
+				continue;
+			}
+
+			// Check if candidate is from same package
+			if (!candidate.files.isEmpty()) {
+				String candidatePackage = extractPackageName(candidate.files.iterator().next());
+				if (candidatePackage.equals(packageName)) {
+					int combinedSize = smallBatch.files.size() + candidate.files.size();
+					if (combinedSize <= MAX_BATCH_SIZE) {
+						// Merge!
+						LOG.info("Merging batch {} ({} files) into batch {} ({} files)",
+							smallBatch.id, smallBatch.files.size(),
+							candidate.id, candidate.files.size());
+
+						candidate.files.addAll(smallBatch.files);
+						candidate.isDirty = true;
+
+						// Update mappings
+						for (Path file : smallBatch.files) {
+							fileToOriginalBatch.put(file, candidate.id);
+						}
+
+						// Remove small batch
+						batches.remove(smallBatch.id);
+						return;
+					}
+				}
+			}
+		}
+
+		// No suitable merge candidate found, keep as-is
+	}
+
+	/**
+	 * Handle new files that weren't previously tracked.
+	 * Adds them to appropriate batches based on package.
+	 */
+	private void handleNewFiles(String projectName, Collection<Path> newFiles) {
+		ClasspathAndSourcepath paths = getClasspathAndSourcepath(projectName);
+		Map<String, String> compilerOptions = buildCompilerOptions(paths.sourcepath);
+		JavaIndex index = indexCache.getIndex();
+
+		indexCache.lockWrite();
+		try {
+			for (Path newFile : newFiles) {
+				// Parse individually first (for quick response)
+				indexFileWithBindings(projectName, newFile, paths.classpath, compilerOptions, index);
+				indexCache.trackIndividuallyParsedFile(newFile);
+
+				// Find or create batch for this file
+				Integer batchId = findBatchForPackage(newFile);
+
+				if (batchId == null) {
+					// No suitable batch found, create new single-file batch
+					batchId = nextBatchId.getAndIncrement();
+					BatchInfo newBatch = new BatchInfo(batchId);
+					batches.put(batchId, newBatch);
+					LOG.debug("Created new batch {} for file {}", batchId, newFile);
+				}
+
+				BatchInfo batch = batches.get(batchId);
+				batch.files.add(newFile);
+				fileToOriginalBatch.put(newFile, batchId);
+				batch.isDirty = true;
+
+				// Check if batch needs splitting
+				if (batch.files.size() > MAX_BATCH_SIZE) {
+					LOG.debug("Batch {} exceeded MAX_BATCH_SIZE, marking for split", batchId);
+					batch.needsSplit = true;
+				}
+
+				// Notify listeners
+				String filePath = newFile.toString();
+				DiagnosticList diagnostics = getFileDiagnostics(filePath);
+				notifyFileDiagnosticsChanged(filePath, diagnostics);
+			}
+
+			indexCache.markDirty();
+		} finally {
+			indexCache.unlockWrite();
+		}
+
+		// Check if we should rebatch
+		if (indexCache.shouldRebatch()) {
+			LOG.info("Rebatch threshold reached after adding new files");
+			rebatchDirtyBatches(projectName);
+		}
+	}
+
+	/**
+	 * Handle deleted files by removing them from batches and index.
+	 */
+	private void handleDeletedFiles(Collection<Path> deletedFiles) {
+		indexCache.lockWrite();
+		try {
+			JavaIndex index = indexCache.getIndex();
+
+			for (Path file : deletedFiles) {
+				// Remove from batch tracking
+				Integer batchId = fileToOriginalBatch.remove(file);
+				if (batchId != null) {
+					BatchInfo batch = batches.get(batchId);
+					if (batch != null) {
+						batch.files.remove(file);
+						batch.isDirty = true;
+
+						// Consider merging if batch is now small
+						if (batch.files.size() < TARGET_BATCH_SIZE / 2) {
+							tryMergeBatch(batch);
+						}
+					}
+				}
+
+				// Remove from index
+				index.removeFile(file);
+
+				// Notify listeners (empty diagnostics for deleted file)
+				notifyFileDiagnosticsChanged(file.toString(), new DiagnosticList());
+			}
+
+			indexCache.markDirty();
 		} finally {
 			indexCache.unlockWrite();
 		}
@@ -1073,6 +1373,17 @@ public class WorkspaceModel {
 				notifyFileDiagnosticsChanged(filePath, diagnostics);
 			}
 
+			// Mark affected batches as dirty
+			for (Path file : files) {
+				Integer batchId = fileToOriginalBatch.get(file);
+				if (batchId != null) {
+					BatchInfo batch = batches.get(batchId);
+					if (batch != null) {
+						batch.isDirty = true;
+					}
+				}
+			}
+
 			// Mark index as dirty
 			indexCache.markDirty();
 		} finally {
@@ -1081,9 +1392,9 @@ public class WorkspaceModel {
 
 		// Check if we should rebatch to consolidate memory
 		if (indexCache.shouldRebatch()) {
-			LOG.info("Rebatch threshold reached ({} files), rebatching individually-parsed files",
+			LOG.info("Rebatch threshold reached ({} files), rebatching dirty batches",
 					indexCache.getIndividuallyParsedCount());
-			rebatchIndividuallyParsedFiles(projectName);
+			rebatchDirtyBatches(projectName);
 		}
 	}
 
@@ -1126,6 +1437,9 @@ public class WorkspaceModel {
 
 			// Check which files have changed since they were indexed
 			List<Path> changedFiles = new ArrayList<>();
+			List<Path> newFiles = new ArrayList<>();
+			Set<Path> allJavaFilesSet = new HashSet<>(allJavaFiles);
+
 			indexCache.lockRead();
 			try {
 				JavaIndex index = indexCache.getIndex();
@@ -1135,18 +1449,46 @@ public class WorkspaceModel {
 
 					// If file is newer than indexed version, it has changed
 					if (fileTimestamp > indexedTimestamp) {
-						changedFiles.add(file);
+						// Check if it's truly new or just modified
+						if (!fileToOriginalBatch.containsKey(file)) {
+							newFiles.add(file);
+						} else {
+							changedFiles.add(file);
+						}
 					}
 				}
 			} finally {
 				indexCache.unlockRead();
 			}
 
+			// Handle deleted files (files in batch tracking but not on disk)
+			List<Path> deletedFiles = new ArrayList<>();
+			for (Path trackedFile : fileToOriginalBatch.keySet()) {
+				if (!allJavaFilesSet.contains(trackedFile) && !trackedFile.toFile().exists()) {
+					deletedFiles.add(trackedFile);
+				}
+			}
+
+			// Process new files
+			if (!newFiles.isEmpty()) {
+				LOG.info("Found {} new files in project {}", newFiles.size(), projectName);
+				handleNewFiles(projectName, newFiles);
+			}
+
+			// Process changed files
 			if (!changedFiles.isEmpty()) {
 				LOG.info("Found {} changed files in project {}", changedFiles.size(), projectName);
 				reparseFiles(projectName, changedFiles);
-			} else {
-				LOG.debug("No changed files found in project {}", projectName);
+			}
+
+			// Process deleted files
+			if (!deletedFiles.isEmpty()) {
+				LOG.info("Found {} deleted files in project {}", deletedFiles.size(), projectName);
+				handleDeletedFiles(deletedFiles);
+			}
+
+			if (newFiles.isEmpty() && changedFiles.isEmpty() && deletedFiles.isEmpty()) {
+				LOG.debug("No file changes found in project {}", projectName);
 			}
 
 			return true;
@@ -1346,6 +1688,21 @@ public class WorkspaceModel {
 			} catch (Exception e) {
 				LOG.error("Error notifying listener of file diagnostics change", e);
 			}
+		}
+	}
+
+	/**
+	 * Tracks information about a batch of files parsed together.
+	 * Files in the same batch share a javac Context and symbol tables.
+	 */
+	private static class BatchInfo {
+		final int id;
+		final Set<Path> files = ConcurrentHashMap.newKeySet();
+		volatile boolean isDirty = false;
+		volatile boolean needsSplit = false;
+
+		BatchInfo(int id) {
+			this.id = id;
 		}
 	}
 }
