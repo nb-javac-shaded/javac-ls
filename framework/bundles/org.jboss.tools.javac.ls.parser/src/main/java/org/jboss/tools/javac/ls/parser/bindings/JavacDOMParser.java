@@ -639,21 +639,31 @@ public class JavacDOMParser {
 
 				// If resolving bindings, analyze all files together
 				if (resolveBindings) {
+					boolean analysisSucceeded = false;
 					try {
 						// Fully consume analyze iterator to ensure diagnostics are reported
 						var analyzeResults = task.analyze();
 						for (var element : analyzeResults) {
 							// Just consume the results
 						}
+						analysisSucceeded = true;
 						LOG.debug("Batch analysis complete");
+					} catch (IOException | RuntimeException ex) {
+						// Some files in the batch may have errors that cause javac analysis to fail
+						// Continue anyway - we can still convert ASTs, just with incomplete bindings
+						LOG.warn("Batch analysis failed (will continue with partial bindings): {}", ex.getMessage());
+					}
 
-						// Create and attach JavacBindingResolver for ALL units
+					// Create and attach JavacBindingResolver for ALL units
+					// This works even if analysis partially failed
+					try {
 						JavacBindingResolver resolver = new JavacBindingResolver(task, context, null, javacUnits);
 						resolver.isRecoveringBindings = true;
 						JavacDomPackageAccessor.setBindingResolver(ast, resolver);
-						LOG.debug("Binding resolver attached for batch of {} files", javacUnits.size());
-					} catch (IOException ex) {
-						LOG.error("Failed to analyze batch", ex);
+						LOG.debug("Binding resolver attached for batch of {} files (analysis {})",
+							javacUnits.size(), analysisSucceeded ? "succeeded" : "partially failed");
+					} catch (Exception ex) {
+						LOG.error("Failed to attach binding resolver", ex);
 					}
 				}
 

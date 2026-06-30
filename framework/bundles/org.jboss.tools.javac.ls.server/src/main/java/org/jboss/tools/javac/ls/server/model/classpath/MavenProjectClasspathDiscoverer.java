@@ -102,7 +102,9 @@ public class MavenProjectClasspathDiscoverer implements IProjectClasspathDiscove
 				command.add(mavenCommand);
 			}
 			command.add("dependency:build-classpath");
-			command.add("-DincludeScope=compile");
+			// Use test scope to include compile + provided + test dependencies
+			// This ensures we get provided-scope dependencies like gradle-api for analysis
+			command.add("-DincludeScope=test");
 			command.add("-Dmdep.outputFile=/dev/stdout");
 			command.add("-q"); // Quiet mode to reduce output
 
@@ -110,22 +112,49 @@ public class MavenProjectClasspathDiscoverer implements IProjectClasspathDiscove
 			pb.directory(projectDir);
 			pb.redirectErrorStream(true);
 
+			// Don't inherit JVM debug/profiling options from parent process
+			// These can cause the child Maven process to hang or conflict with parent
+			pb.environment().remove("MAVEN_OPTS");
+			pb.environment().remove("MAVEN_DEBUG_OPTS");  // Used by mvnDebug
+			pb.environment().remove("JAVA_TOOL_OPTIONS");
+			pb.environment().remove("_JAVA_OPTIONS");
+
+			// Explicitly set clean environment to prevent any wrapper scripts from
+			// inheriting debug settings or trying to detect debug mode
+			pb.environment().put("MAVEN_OPTS", "");
+			pb.environment().put("MAVEN_DEBUG_OPTS", "");
+
 			LOG.debug("Executing Maven command: {}", String.join(" ", command));
 			Process process = pb.start();
 
-			// Read classpath from output
-			StringBuilder classpathOutput = new StringBuilder();
+			// Close stdin so Maven doesn't wait for input
+			process.getOutputStream().close();
+
+			// Read ALL output first (don't filter during read to avoid blocking)
+			StringBuilder allOutput = new StringBuilder();
 			try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
 				String line;
 				while ((line = reader.readLine()) != null) {
-					// Maven outputs the classpath as a single line with path separator
-					if (line.contains(".jar") || line.contains(File.separator)) {
-						classpathOutput.append(line);
-					}
+					allOutput.append(line).append("\n");
 				}
 			}
 
-			int exitCode = process.waitFor();
+			// Wait for process with timeout (5 minutes max)
+			boolean finished = process.waitFor(5, java.util.concurrent.TimeUnit.MINUTES);
+			int exitCode = finished ? process.exitValue() : -1;
+			if (!finished) {
+				LOG.warn("Maven command timed out after 5 minutes for project: {}", proj.getName());
+				process.destroyForcibly();
+				return;
+			}
+
+			// Now filter for classpath lines
+			StringBuilder classpathOutput = new StringBuilder();
+			for (String line : allOutput.toString().split("\n")) {
+				if (line.contains(".jar") || line.contains(File.separator)) {
+					classpathOutput.append(line);
+				}
+			}
 			if (exitCode == 0) {
 				parseClasspathOutput(classpathOutput.toString(), entries);
 			} else {
@@ -142,13 +171,24 @@ public class MavenProjectClasspathDiscoverer implements IProjectClasspathDiscove
 			return;
 		}
 
+		// Track paths we've already added to avoid duplicates
+		java.util.Set<String> addedPaths = new java.util.HashSet<>();
+		for (IJavacClasspathEntry existing : entries) {
+			if (existing.getPath() != null) {
+				addedPaths.add(existing.getPath());
+			}
+		}
+
 		// Maven outputs classpath with system-specific path separator
 		String[] paths = classpathOutput.split(File.pathSeparator);
 		for (String path : paths) {
 			path = path.trim();
 			if (!path.isEmpty() && new File(path).exists()) {
-				entries.add(new JavacClasspathEntry(EntryType.LIBRARY, path));
-				LOG.debug("Added library: {}", path);
+				// Only add if not already present (deduplicate)
+				if (addedPaths.add(path)) {
+					entries.add(new JavacClasspathEntry(EntryType.LIBRARY, path));
+					LOG.debug("Added library: {}", path);
+				}
 			}
 		}
 	}

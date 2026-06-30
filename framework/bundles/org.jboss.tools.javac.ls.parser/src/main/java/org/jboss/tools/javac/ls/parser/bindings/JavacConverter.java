@@ -2278,8 +2278,15 @@ public class JavacConverter {
 		if (value instanceof Character v) {
 			CharacterLiteral res = this.ast.newCharacterLiteral();
 			commonSettings(res, literal);
-			res.setCharValue(v.charValue());
-			res.setEscapedValue(this.rawText.substring(res.getStartPosition(), res.getStartPosition() + res.getLength()));
+			// Set escaped value first from source text, then char value
+			// This avoids Eclipse JDT validation issues with certain Unicode characters
+			String escapedValue = this.rawText.substring(res.getStartPosition(), res.getStartPosition() + res.getLength());
+			try {
+				res.setEscapedValue(escapedValue);
+			} catch (IllegalArgumentException e) {
+				// If Eclipse JDT rejects the escaped value, fall back to setting just the char value
+				res.setCharValue(v.charValue());
+			}
 			return res;
 		}
 		throw new UnsupportedOperationException("Not supported yet " + literal + "\n of type" + literal.getClass().getName());
@@ -3080,9 +3087,17 @@ public class JavacConverter {
 			}
 		}
 		if (javac instanceof JCPrimitiveTypeTree primitiveTypeTree) {
-			PrimitiveType res = this.ast.newPrimitiveType(convert(primitiveTypeTree.getPrimitiveTypeKind()));
-			commonSettings(res, primitiveTypeTree);
-			return res;
+			try {
+				PrimitiveType res = this.ast.newPrimitiveType(convert(primitiveTypeTree.getPrimitiveTypeKind()));
+				commonSettings(res, primitiveTypeTree);
+				return res;
+			} catch (AssertionError ae) {
+				// Handle TypeTag.ERROR which doesn't map to a primitive type
+				// Return a SimpleType with FAKE_IDENTIFIER for error recovery
+				var res = this.ast.newSimpleType(this.ast.newSimpleName(FAKE_IDENTIFIER));
+				commonSettings(res, primitiveTypeTree);
+				return res;
+			}
 		}
 		if (javac instanceof JCTypeUnion union) {
 			UnionType res = this.ast.newUnionType();

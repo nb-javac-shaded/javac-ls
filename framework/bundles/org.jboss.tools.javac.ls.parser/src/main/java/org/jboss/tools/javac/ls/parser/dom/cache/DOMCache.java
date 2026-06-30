@@ -136,6 +136,36 @@ public class DOMCache {
 	}
 
 	/**
+	 * Manually cache a CompilationUnit that was parsed externally.
+	 * Useful for caching results from batch parsing where the source
+	 * content is already available.
+	 *
+	 * @param fileUri URI of the source file
+	 * @param unit the parsed CompilationUnit
+	 * @param sourceContent the source content (already read)
+	 */
+	public void put(URI fileUri, CompilationUnit unit, String sourceContent) {
+		if (unit == null) {
+			LOG.warn("Attempted to cache null CompilationUnit for {}", fileUri);
+			return;
+		}
+
+		File sourceFile = new File(fileUri);
+		if (!sourceFile.exists()) {
+			LOG.warn("Cannot cache CompilationUnit for non-existent file: {}", fileUri);
+			return;
+		}
+
+		String sourceHash = String.valueOf(sourceContent.hashCode());
+		long timestamp = sourceFile.lastModified();
+
+		cache.put(fileUri, new CacheEntry(unit, timestamp, sourceHash));
+
+		LOG.debug("Cached CompilationUnit for {} ({} problems)",
+			fileUri, unit.getProblems() != null ? unit.getProblems().length : 0);
+	}
+
+	/**
 	 * Invalidate the cached entry for a file.
 	 *
 	 * @param fileUri URI of the file to invalidate

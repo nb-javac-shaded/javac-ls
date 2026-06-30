@@ -197,6 +197,21 @@ public class DOMConstants {
 				escapeChar == '\'' || escapeChar == '\\') {
 				return i + 1 == s.length() - 1;
 			}
+			// Unicode escape \\uXXXX
+			if (escapeChar == 'u') {
+				i++;
+				for (int j = 0; j < 4; j++) {
+					if (i >= s.length() - 1) return false;
+					char hexChar = s.charAt(i);
+					if (!((hexChar >= '0' && hexChar <= '9') ||
+						  (hexChar >= 'a' && hexChar <= 'f') ||
+						  (hexChar >= 'A' && hexChar <= 'F'))) {
+						return false;
+					}
+					i++;
+				}
+				return i == s.length() - 1;
+			}
 			// Octal escape
 			if (escapeChar >= '0' && escapeChar <= '7') {
 				i++;
