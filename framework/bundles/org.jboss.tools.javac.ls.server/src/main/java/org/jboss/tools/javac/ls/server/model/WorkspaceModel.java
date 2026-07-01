@@ -980,20 +980,35 @@ public class WorkspaceModel {
 			}
 		}
 
-		// Parse and index each file
-		JavacDOMParser parser = new JavacDOMParser();
 		int filesIndexed = 0;
-
 		indexCache.lockWrite();
 		try {
 			JavaIndex index = indexCache.getIndex();
 
-			for (Path javaFile : javaFiles) {
+			// Parse all files in batches (without binding resolution for performance)
+			// Batching shares the JavacFileManager/Context overhead across files
+			int batchSize = 100; // Parse 100 files per batch
+			for (int i = 0; i < javaFiles.size(); i += batchSize) {
+				int endIndex = Math.min(i + batchSize, javaFiles.size());
+				List<Path> batch = javaFiles.subList(i, endIndex);
+
 				try {
-					indexFile(javaFile, parser, classpath, index);
-					filesIndexed++;
+					int indexed = indexBatch(batch, classpath, index);
+					filesIndexed += indexed;
+					LOG.debug("Indexed batch {}/{}: {} files", (i / batchSize) + 1,
+						(javaFiles.size() + batchSize - 1) / batchSize, indexed);
 				} catch (Exception e) {
-					LOG.error("Failed to index file: {}", javaFile, e);
+					LOG.error("Failed to index batch {}-{}, falling back to individual parsing", i, endIndex, e);
+					// Fallback: parse individually
+					JavacDOMParser parser = new JavacDOMParser();
+					for (Path javaFile : batch) {
+						try {
+							indexFile(javaFile, parser, classpath, index);
+							filesIndexed++;
+						} catch (Exception e2) {
+							LOG.error("Failed to index file: {}", javaFile, e2);
+						}
+					}
 				}
 			}
 
@@ -1550,6 +1565,76 @@ public class WorkspaceModel {
 		visitor.finishIndexing();
 
 		LOG.debug("Indexed file: {}", javaFile);
+	}
+
+	/**
+	 * Index a batch of Java files without binding resolution.
+	 * Uses shared javac Context for better performance.
+	 *
+	 * @param javaFiles list of Java files to index
+	 * @param classpath the classpath for parsing
+	 * @param index the index to populate
+	 * @return number of files successfully indexed
+	 */
+	private int indexBatch(List<Path> javaFiles, List<File> classpath, JavaIndex index) throws IOException {
+		if (javaFiles.isEmpty()) {
+			return 0;
+		}
+
+		// Read all files into memory
+		Map<String, String> sourceFiles = new LinkedHashMap<>();
+		for (Path javaFile : javaFiles) {
+			try {
+				String source = Files.readString(javaFile);
+				sourceFiles.put(javaFile.toString(), source);
+			} catch (IOException e) {
+				LOG.error("Failed to read file: {}", javaFile, e);
+			}
+		}
+
+		if (sourceFiles.isEmpty()) {
+			return 0;
+		}
+
+		// Parse all files in a single batch (shared Context, no binding resolution)
+		JavacDOMParser parser = new JavacDOMParser();
+		Map<String, CompilationUnit> units = parser.parseBatch(
+			sourceFiles,
+			classpath,
+			AST.JLS21,
+			null,  // compiler options
+			false  // NO binding resolution for indexing
+		);
+
+		// Index each parsed compilation unit
+		int indexed = 0;
+		for (Map.Entry<String, CompilationUnit> entry : units.entrySet()) {
+			String fileName = entry.getKey();
+			CompilationUnit cu = entry.getValue();
+
+			if (cu == null) {
+				LOG.warn("Failed to parse file in batch: {}", fileName);
+				continue;
+			}
+
+			try {
+				Path javaFile = Path.of(fileName);
+
+				// Remove old declarations for this file (incremental update)
+				index.removeFile(javaFile);
+
+				// Visit AST and populate index
+				DOMToIndexVisitor visitor = new DOMToIndexVisitor(index, javaFile);
+				cu.accept(visitor);
+				visitor.finishIndexing();
+
+				indexed++;
+			} catch (Exception e) {
+				LOG.error("Failed to index compilation unit: {}", fileName, e);
+			}
+		}
+
+		return indexed;
 	}
 
 	/**
