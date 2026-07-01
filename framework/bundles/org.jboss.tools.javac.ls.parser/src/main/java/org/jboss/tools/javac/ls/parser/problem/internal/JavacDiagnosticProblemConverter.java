@@ -467,7 +467,7 @@ public class JavacDiagnosticProblemConverter {
 			if (problemId == IProblem.JavadocMissingParamTag) {
 				String message = diagnostic.getMessage(Locale.ENGLISH);
 				TreePath path = getTreePath(diagnostic);
-				if (message.startsWith("no @param for <") && path.getLeaf() instanceof JCMethodDecl method) {
+				if (path != null && message.startsWith("no @param for <") && path.getLeaf() instanceof JCMethodDecl method) {
 					String typeParam = message.substring("no @param for <".length(), message.length() - 1);
 					var position = method.getTypeParameters().stream()
 						.filter(paramDecl -> typeParam.equals(paramDecl.getName().toString()))
@@ -478,7 +478,7 @@ public class JavacDiagnosticProblemConverter {
 						return position;
 					}
 				}
-				if (message.startsWith("no @param for ") && path.getLeaf() instanceof JCMethodDecl method) {
+				if (path != null && message.startsWith("no @param for ") && path.getLeaf() instanceof JCMethodDecl method) {
 					String param = message.substring("no @param for ".length());
 					var position = method.getParameters().stream()
 						.filter(paramDecl -> param.equals(paramDecl.getName().toString()))
@@ -563,7 +563,7 @@ public class JavacDiagnosticProblemConverter {
 						&& !(diagnosticPath.getLeaf() instanceof JCMethodInvocation)) {
 						diagnosticPath = diagnosticPath.getParentPath();
 					}
-					if (diagnosticPath.getLeaf() instanceof JCMethodInvocation method) {
+					if (diagnosticPath != null && diagnosticPath.getLeaf() instanceof JCMethodInvocation method) {
 						var selectExpr = method.getMethodSelect();
 						if (selectExpr instanceof JCIdent methodNameIdent) {
 							int start = methodNameIdent.getStartPosition();
@@ -582,12 +582,12 @@ public class JavacDiagnosticProblemConverter {
 					}
 				} else if (problemId == IProblem.SealedSuperClassDoesNotPermit) {
 					// jdt expects the node in the extends clause with the name of the sealed class
-					if (diagnosticPath.getLeaf() instanceof JCTree.JCClassDecl classDecl) {
+					if (diagnosticPath != null && diagnosticPath.getLeaf() instanceof JCTree.JCClassDecl classDecl) {
 						diagnosticPath = JavacTrees.instance(context).getPath(units.get(jcDiagnostic.getSource()), classDecl.getExtendsClause());
 					}
 				} else if (problemId == IProblem.SealedSuperInterfaceDoesNotPermit) {
 					// jdt expects the node in the implements clause with the name of the sealed class
-					if (diagnosticPath.getLeaf() instanceof JCTree.JCClassDecl classDecl) {
+					if (diagnosticPath != null && diagnosticPath.getLeaf() instanceof JCTree.JCClassDecl classDecl) {
 						Symbol.ClassSymbol sym = getDiagnosticArgumentByType(jcDiagnostic, Symbol.ClassSymbol.class);
 						Optional<JCExpression> jcExpr = classDecl.getImplementsClause().stream() //
 								.filter(expression -> {
@@ -1214,7 +1214,7 @@ public class JavacDiagnosticProblemConverter {
 			case "compiler.err.cant.ref.before.ctor.called" -> IProblem.InstanceFieldDuringConstructorInvocation; // TODO different according to target node
 			case "compiler.err.not.def.public.cant.access" -> {
 				TreePath path = getTreePath(diagnostic);
-				if( path.getLeaf() instanceof JCFieldAccess)
+				if(path != null && path.getLeaf() instanceof JCFieldAccess)
 					yield IProblem.NotVisibleField;
 				yield IProblem.NotVisibleType; // TODO different according to target node
 			}
