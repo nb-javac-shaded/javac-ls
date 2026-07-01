@@ -1549,7 +1549,7 @@ public class WorkspaceModel {
 		// Parse to CompilationUnit (without resolving bindings for performance)
 		CompilationUnit cu = parser.parse(
 				sourceContent,
-				javaFile.getFileName().toString(),
+				javaFile.toString(),
 				classpath,
 				AST.JLS21,
 				null,

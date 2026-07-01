@@ -103,7 +103,7 @@ public class DOMCache {
 		try {
 			// Read source content
 			String sourceContent = new String(Files.readAllBytes(Paths.get(fileUri)));
-			String fileName = sourceFile.getName();
+			String fileName = sourceFile.getAbsolutePath();
 
 			// Parse
 			CompilationUnit unit = parser.parse(

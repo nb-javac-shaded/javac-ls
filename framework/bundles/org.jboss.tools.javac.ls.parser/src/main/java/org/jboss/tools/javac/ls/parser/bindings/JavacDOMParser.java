@@ -17,6 +17,7 @@ package org.jboss.tools.javac.ls.parser.bindings;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.CharBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -742,8 +743,17 @@ public class JavacDOMParser {
 		private final CharSequence source;
 
 		public VirtualSourceFile(String fileName, CharSequence source) {
-			super(URI.create("mem:///" + fileName), Kind.SOURCE);
+			super(toMemoryURI(fileName), Kind.SOURCE);
 			this.source = source;
+		}
+
+		private static URI toMemoryURI(String fileName) {
+			try {
+				// Use URI constructor to properly encode special characters (e.g., spaces)
+				return new URI("mem", "", fileName, null);
+			} catch (URISyntaxException e) {
+				throw new IllegalArgumentException("Invalid file name: " + fileName, e);
+			}
 		}
 
 		@Override
