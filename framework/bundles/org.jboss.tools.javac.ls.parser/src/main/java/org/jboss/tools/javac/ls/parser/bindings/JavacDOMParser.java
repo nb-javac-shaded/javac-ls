@@ -230,23 +230,30 @@ public class JavacDOMParser {
 
 			// Always analyze to get diagnostics (errors/warnings)
 			// Even if we don't resolve bindings, we need analysis for problem reporting
-			try {
-				// Fully consume the analyze iterator to ensure diagnostics are reported
-				var analyzeResults = task.analyze();
-				for (var element : analyzeResults) {
-					// Just consume the results
+			// Retry analyze until it succeeds (pattern from eclipse.jdt.javac)
+			Throwable caught = null;
+			do {
+				caught = null;
+				try {
+					// Fully consume the analyze iterator to ensure diagnostics are reported
+					var analyzeResults = task.analyze();
+					for (var element : analyzeResults) {
+						// Just consume the results
+					}
+				} catch (Throwable t) {
+					caught = t;
+					LOG.warn("Error while analyzing (will retry): {}", t.getMessage());
 				}
-				LOG.debug("Analysis complete, diagnostics reported");
-				if (resolveBindings) {
-					// Create and attach JavacBindingResolver for binding resolution
-					List<JCCompilationUnit> javacCompilationUnits = List.of(javacUnit);
-					JavacBindingResolver resolver = new JavacBindingResolver(task, context, converter, javacCompilationUnits);
-					resolver.isRecoveringBindings = true;
-					JavacDomPackageAccessor.setBindingResolver(ast, resolver);
-					LOG.debug("Binding resolution enabled");
-				}
-			} catch (IOException ex) {
-				LOG.error("Failed to analyze", ex);
+			} while (caught != null);
+
+			LOG.debug("Analysis complete, diagnostics reported");
+			if (resolveBindings) {
+				// Create and attach JavacBindingResolver for binding resolution
+				List<JCCompilationUnit> javacCompilationUnits = List.of(javacUnit);
+				JavacBindingResolver resolver = new JavacBindingResolver(task, context, converter, javacCompilationUnits);
+				resolver.isRecoveringBindings = true;
+				JavacDomPackageAccessor.setBindingResolver(ast, resolver);
+				LOG.debug("Binding resolution enabled");
 			}
 
 			return result;
@@ -639,29 +646,29 @@ public class JavacDOMParser {
 
 				// If resolving bindings, analyze all files together
 				if (resolveBindings) {
-					boolean analysisSucceeded = false;
-					try {
-						// Fully consume analyze iterator to ensure diagnostics are reported
-						var analyzeResults = task.analyze();
-						for (var element : analyzeResults) {
-							// Just consume the results
+					// Retry analyze until it succeeds (pattern from eclipse.jdt.javac)
+					Throwable caught = null;
+					do {
+						caught = null;
+						try {
+							// Fully consume analyze iterator to ensure diagnostics are reported
+							var analyzeResults = task.analyze();
+							for (var element : analyzeResults) {
+								// Just consume the results
+							}
+						} catch (Throwable t) {
+							caught = t;
+							LOG.warn("Error while analyzing batch (will retry): {}", t.getMessage());
 						}
-						analysisSucceeded = true;
-						LOG.debug("Batch analysis complete");
-					} catch (IOException | RuntimeException ex) {
-						// Some files in the batch may have errors that cause javac analysis to fail
-						// Continue anyway - we can still convert ASTs, just with incomplete bindings
-						LOG.warn("Batch analysis failed (will continue with partial bindings): {}", ex.getMessage());
-					}
+					} while (caught != null);
+					LOG.debug("Batch analysis complete");
 
 					// Create and attach JavacBindingResolver for ALL units
-					// This works even if analysis partially failed
 					try {
 						JavacBindingResolver resolver = new JavacBindingResolver(task, context, null, javacUnits);
 						resolver.isRecoveringBindings = true;
 						JavacDomPackageAccessor.setBindingResolver(ast, resolver);
-						LOG.debug("Binding resolver attached for batch of {} files (analysis {})",
-							javacUnits.size(), analysisSucceeded ? "succeeded" : "partially failed");
+						LOG.debug("Binding resolver attached for batch of {} files", javacUnits.size());
 					} catch (Exception ex) {
 						LOG.error("Failed to attach binding resolver", ex);
 					}
