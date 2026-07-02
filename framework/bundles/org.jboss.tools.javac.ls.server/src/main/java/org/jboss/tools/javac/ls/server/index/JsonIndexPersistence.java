@@ -63,6 +63,7 @@ public class JsonIndexPersistence implements IndexPersistence {
 	private static final String METHODS_FILE = "methods.json";
 	private static final String FIELDS_FILE = "fields.json";
 	private static final String FILE_TO_TYPES_FILE = "file_to_types.json";
+	private static final String FILE_TIMESTAMPS_FILE = "file_timestamps.json";
 
 	public JsonIndexPersistence(Path baseDirectory) {
 		this.baseDirectory = baseDirectory;
@@ -447,6 +448,44 @@ public class JsonIndexPersistence implements IndexPersistence {
 		}
 	}
 
+	@Override
+	public void saveFileTimestamps(Map<Path, Long> fileTimestamps) throws IOException {
+		ensureDirectoryExists();
+		Path file = baseDirectory.resolve(FILE_TIMESTAMPS_FILE);
+
+		// Convert Path keys to String for JSON serialization
+		Map<String, Long> stringMap = new HashMap<>();
+		for (Map.Entry<Path, Long> entry : fileTimestamps.entrySet()) {
+			stringMap.put(entry.getKey().toString(), entry.getValue());
+		}
+
+		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+			gson.toJson(stringMap, writer);
+		}
+	}
+
+	@Override
+	public Map<Path, Long> loadFileTimestamps() throws IOException {
+		Path file = baseDirectory.resolve(FILE_TIMESTAMPS_FILE);
+		if (!Files.exists(file)) {
+			return new HashMap<>();
+		}
+
+		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			Type type = new TypeToken<Map<String, Long>>(){}.getType();
+			Map<String, Long> stringMap = gson.fromJson(reader, type);
+
+			// Convert String keys back to Path
+			Map<Path, Long> result = new HashMap<>();
+			if (stringMap != null) {
+				for (Map.Entry<String, Long> entry : stringMap.entrySet()) {
+					result.put(Paths.get(entry.getKey()), entry.getValue());
+				}
+			}
+			return result;
+		}
+	}
+
 	private void ensureDirectoryExists() throws IOException {
 		if (!Files.exists(baseDirectory)) {
 			Files.createDirectories(baseDirectory);
@@ -466,6 +505,7 @@ public class JsonIndexPersistence implements IndexPersistence {
 			Files.deleteIfExists(baseDirectory.resolve(METHODS_FILE));
 			Files.deleteIfExists(baseDirectory.resolve(FIELDS_FILE));
 			Files.deleteIfExists(baseDirectory.resolve(FILE_TO_TYPES_FILE));
+			Files.deleteIfExists(baseDirectory.resolve(FILE_TIMESTAMPS_FILE));
 		}
 	}
 }

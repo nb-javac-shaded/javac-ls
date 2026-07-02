@@ -375,6 +375,7 @@ public class JavaIndex {
 		persistence.saveMethods(new HashMap<>(methods));
 		persistence.saveFields(new HashMap<>(fields));
 		persistence.saveFileToDeclaredTypes(new HashMap<>(fileToDeclaredTypes));
+		persistence.saveFileTimestamps(new HashMap<>(fileTimestamps));
 	}
 
 	/**
@@ -389,6 +390,7 @@ public class JavaIndex {
 		methods.clear();
 		fields.clear();
 		fileToDeclaredTypes.clear();
+		fileTimestamps.clear();
 
 		Map<String, TypeDeclarationEntry> loadedTypes = persistence.loadTypes();
 		if (loadedTypes != null) {
@@ -434,6 +436,11 @@ public class JavaIndex {
 		Map<Path, Set<String>> loadedFileToDeclaredTypes = persistence.loadFileToDeclaredTypes();
 		if (loadedFileToDeclaredTypes != null) {
 			fileToDeclaredTypes.putAll(loadedFileToDeclaredTypes);
+		}
+
+		Map<Path, Long> loadedFileTimestamps = persistence.loadFileTimestamps();
+		if (loadedFileTimestamps != null) {
+			fileTimestamps.putAll(loadedFileTimestamps);
 		}
 
 		LOG.info("Loaded index: {} types, {} methods, {} fields",

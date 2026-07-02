@@ -150,4 +150,18 @@ public interface IndexPersistence {
 	 * @return timestamp in milliseconds, or 0 if doesn't exist
 	 */
 	long getTimestamp();
+
+	/**
+	 * Save file timestamps for change detection.
+	 * @param fileTimestamps map of file path to last modification timestamp
+	 * @throws IOException if save fails
+	 */
+	void saveFileTimestamps(Map<Path, Long> fileTimestamps) throws IOException;
+
+	/**
+	 * Load file timestamps.
+	 * @return map of file path to last modification timestamp
+	 * @throws IOException if load fails
+	 */
+	Map<Path, Long> loadFileTimestamps() throws IOException;
 }
