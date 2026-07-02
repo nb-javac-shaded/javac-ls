@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -49,11 +50,15 @@ public class JsonIndexPersistence implements IndexPersistence {
 
 	private final Path baseDirectory;
 	private final Gson gson;
+	private final Gson nameRefGson; // Special Gson for name references without "kind" field
+	private final Gson typeRefGson; // Special Gson for type references without "kind" field
+	private final Gson annotationRefGson; // Special Gson for annotation references without "kind" field
 
 	private static final String TYPES_FILE = "types.json";
 	private static final String SUBTYPES_FILE = "subtypes.json";
 	private static final String IMPLEMENTORS_FILE = "implementors.json";
 	private static final String TYPE_REFERENCES_FILE = "type_references.json";
+	private static final String ANNOTATION_REFERENCES_FILE = "annotation_references.json";
 	private static final String NAME_REFERENCES_FILE = "name_references.json";
 	private static final String METHODS_FILE = "methods.json";
 	private static final String FIELDS_FILE = "fields.json";
@@ -62,9 +67,29 @@ public class JsonIndexPersistence implements IndexPersistence {
 	public JsonIndexPersistence(Path baseDirectory) {
 		this.baseDirectory = baseDirectory;
 		this.gson = new GsonBuilder()
-				.setPrettyPrinting()
 				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
 				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
+				.create();
+
+		// Separate Gson for name references that omits the redundant "kind" field
+		this.nameRefGson = new GsonBuilder()
+				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
+				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
+				.registerTypeAdapter(ReferenceEntry.class, new NameReferenceEntryAdapter())
+				.create();
+
+		// Separate Gson for type references that omits the redundant "kind" field
+		this.typeRefGson = new GsonBuilder()
+				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
+				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
+				.registerTypeAdapter(ReferenceEntry.class, new TypeReferenceEntryAdapter())
+				.create();
+
+		// Separate Gson for annotation references that omits the redundant "kind" field
+		this.annotationRefGson = new GsonBuilder()
+				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
+				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
+				.registerTypeAdapter(ReferenceEntry.class, new AnnotationReferenceEntryAdapter())
 				.create();
 	}
 
@@ -86,6 +111,71 @@ public class JsonIndexPersistence implements IndexPersistence {
 		public Path deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
 				throws JsonParseException {
 			return Paths.get(json.getAsString());
+		}
+	}
+
+	/**
+	 * Custom adapter for ReferenceEntry used in name_references.json that omits the "kind" field
+	 * since all entries in that file are NAME_REFERENCE kind (saves ~10% disk space)
+	 */
+	private static class NameReferenceEntryAdapter implements JsonSerializer<ReferenceEntry>, JsonDeserializer<ReferenceEntry> {
+		@Override
+		public JsonElement serialize(ReferenceEntry src, Type typeOfSrc, JsonSerializationContext context) {
+			// Only serialize location, omit kind
+			com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+			obj.add("location", context.serialize(src.getLocation()));
+			return obj;
+		}
+
+		@Override
+		public ReferenceEntry deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+				throws JsonParseException {
+			com.google.gson.JsonObject obj = json.getAsJsonObject();
+			org.jboss.tools.javac.ls.index.model.Location location = context.deserialize(obj.get("location"), org.jboss.tools.javac.ls.index.model.Location.class);
+			// Always use NAME_REFERENCE kind for name references
+			return new ReferenceEntry(location, ReferenceEntry.ReferenceKind.NAME_REFERENCE);
+		}
+	}
+
+	/**
+	 * Custom adapter for ReferenceEntry used in type_references.json that omits the "kind" field
+	 * since all entries in that file are TYPE_REFERENCE kind
+	 */
+	private static class TypeReferenceEntryAdapter implements JsonSerializer<ReferenceEntry>, JsonDeserializer<ReferenceEntry> {
+		@Override
+		public JsonElement serialize(ReferenceEntry src, Type typeOfSrc, JsonSerializationContext context) {
+			com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+			obj.add("location", context.serialize(src.getLocation()));
+			return obj;
+		}
+
+		@Override
+		public ReferenceEntry deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+				throws JsonParseException {
+			com.google.gson.JsonObject obj = json.getAsJsonObject();
+			org.jboss.tools.javac.ls.index.model.Location location = context.deserialize(obj.get("location"), org.jboss.tools.javac.ls.index.model.Location.class);
+			return new ReferenceEntry(location, ReferenceEntry.ReferenceKind.TYPE_REFERENCE);
+		}
+	}
+
+	/**
+	 * Custom adapter for ReferenceEntry used in annotation_references.json that omits the "kind" field
+	 * since all entries in that file are ANNOTATION_USE kind
+	 */
+	private static class AnnotationReferenceEntryAdapter implements JsonSerializer<ReferenceEntry>, JsonDeserializer<ReferenceEntry> {
+		@Override
+		public JsonElement serialize(ReferenceEntry src, Type typeOfSrc, JsonSerializationContext context) {
+			com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+			obj.add("location", context.serialize(src.getLocation()));
+			return obj;
+		}
+
+		@Override
+		public ReferenceEntry deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+				throws JsonParseException {
+			com.google.gson.JsonObject obj = json.getAsJsonObject();
+			org.jboss.tools.javac.ls.index.model.Location location = context.deserialize(obj.get("location"), org.jboss.tools.javac.ls.index.model.Location.class);
+			return new ReferenceEntry(location, ReferenceEntry.ReferenceKind.ANNOTATION_USE);
 		}
 	}
 
@@ -158,23 +248,79 @@ public class JsonIndexPersistence implements IndexPersistence {
 	@Override
 	public void saveTypeReferences(Map<String, List<ReferenceEntry>> typeReferences) throws IOException {
 		ensureDirectoryExists();
-		Path file = baseDirectory.resolve(TYPE_REFERENCES_FILE);
-		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-			gson.toJson(typeReferences, writer);
+
+		// Split into TYPE_REFERENCE and ANNOTATION_USE
+		Map<String, List<ReferenceEntry>> typeRefs = new HashMap<>();
+		Map<String, List<ReferenceEntry>> annotationRefs = new HashMap<>();
+
+		for (Map.Entry<String, List<ReferenceEntry>> entry : typeReferences.entrySet()) {
+			List<ReferenceEntry> typeList = new ArrayList<>();
+			List<ReferenceEntry> annotationList = new ArrayList<>();
+
+			for (ReferenceEntry ref : entry.getValue()) {
+				if (ref == null) {
+					continue;
+				}
+				if (ref.getKind() == ReferenceEntry.ReferenceKind.TYPE_REFERENCE) {
+					typeList.add(ref);
+				} else if (ref.getKind() == ReferenceEntry.ReferenceKind.ANNOTATION_USE) {
+					annotationList.add(ref);
+				}
+			}
+
+			if (!typeList.isEmpty()) {
+				typeRefs.put(entry.getKey(), typeList);
+			}
+			if (!annotationList.isEmpty()) {
+				annotationRefs.put(entry.getKey(), annotationList);
+			}
+		}
+
+		// Save type references (without "kind" field)
+		Path typeFile = baseDirectory.resolve(TYPE_REFERENCES_FILE);
+		try (Writer writer = Files.newBufferedWriter(typeFile, StandardCharsets.UTF_8)) {
+			typeRefGson.toJson(typeRefs, writer);
+		}
+
+		// Save annotation references (without "kind" field)
+		Path annotationFile = baseDirectory.resolve(ANNOTATION_REFERENCES_FILE);
+		try (Writer writer = Files.newBufferedWriter(annotationFile, StandardCharsets.UTF_8)) {
+			annotationRefGson.toJson(annotationRefs, writer);
 		}
 	}
 
 	@Override
 	public Map<String, List<ReferenceEntry>> loadTypeReferences() throws IOException {
-		Path file = baseDirectory.resolve(TYPE_REFERENCES_FILE);
-		if (!Files.exists(file)) {
-			return new HashMap<>();
+		Map<String, List<ReferenceEntry>> result = new HashMap<>();
+
+		// Load type references
+		Path typeFile = baseDirectory.resolve(TYPE_REFERENCES_FILE);
+		if (Files.exists(typeFile)) {
+			try (Reader reader = Files.newBufferedReader(typeFile, StandardCharsets.UTF_8)) {
+				Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
+				Map<String, List<ReferenceEntry>> typeRefs = typeRefGson.fromJson(reader, type);
+				if (typeRefs != null) {
+					result.putAll(typeRefs);
+				}
+			}
 		}
-		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
-			Map<String, List<ReferenceEntry>> result = gson.fromJson(reader, type);
-			return result != null ? result : new HashMap<>();
+
+		// Load annotation references
+		Path annotationFile = baseDirectory.resolve(ANNOTATION_REFERENCES_FILE);
+		if (Files.exists(annotationFile)) {
+			try (Reader reader = Files.newBufferedReader(annotationFile, StandardCharsets.UTF_8)) {
+				Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
+				Map<String, List<ReferenceEntry>> annotationRefs = annotationRefGson.fromJson(reader, type);
+				if (annotationRefs != null) {
+					// Merge annotation refs with type refs
+					for (Map.Entry<String, List<ReferenceEntry>> entry : annotationRefs.entrySet()) {
+						result.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).addAll(entry.getValue());
+					}
+				}
+			}
 		}
+
+		return result;
 	}
 
 	@Override
@@ -182,7 +328,8 @@ public class JsonIndexPersistence implements IndexPersistence {
 		ensureDirectoryExists();
 		Path file = baseDirectory.resolve(NAME_REFERENCES_FILE);
 		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-			gson.toJson(nameReferences, writer);
+			// Use nameRefGson which omits the redundant "kind" field
+			nameRefGson.toJson(nameReferences, writer);
 		}
 	}
 
@@ -194,7 +341,8 @@ public class JsonIndexPersistence implements IndexPersistence {
 		}
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
 			Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
-			Map<String, List<ReferenceEntry>> result = gson.fromJson(reader, type);
+			// Use nameRefGson which automatically adds NAME_REFERENCE kind
+			Map<String, List<ReferenceEntry>> result = nameRefGson.fromJson(reader, type);
 			return result != null ? result : new HashMap<>();
 		}
 	}

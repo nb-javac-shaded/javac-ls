@@ -17,7 +17,6 @@ package org.jboss.tools.javac.ls.parser.bindings;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.CharBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -166,13 +165,18 @@ public class JavacDOMParser {
 			// Now populate the file-to-unit mapping for the diagnostic listener
 			filesToUnits.put(fileObject, result);
 
+			// Convert Options to CLI format
+			// Note: Some options must be passed explicitly to getTask(), not just in Context
+			List<String> taskOptions = toCLIOptions(javacOptions);
+			LOG.debug("Passing options to getTask(): {}", taskOptions);
+
 			// Create compiler and task using JavacTool with context
 			var compiler = ToolProvider.getSystemJavaCompiler();
 			JavacTask task = ((JavacTool) compiler).getTask(
 				null,           // out
 				fileManager,    // file manager
 				null,           // diagnostic listener already in context
-				List.of(),      // options already set in context
+				taskOptions,    // options must be passed explicitly
 				List.of(),      // classes to compile (none)
 				List.of(fileObject),  // source files
 				context         // context with options and listener
@@ -211,6 +215,12 @@ public class JavacDOMParser {
 			boolean docEnabled = JavaCoreConstants.ENABLED.equals(compilerOptions.get(JavaCoreConstants.COMPILER_DOC_COMMENT_SUPPORT));
 			JavacConverter converter = new JavacConverter(ast, javacUnit, context, sourceContent, docEnabled, -1);
 			converter.populateCompilationUnit(result, javacUnit);
+
+			// Analyze parse quality
+			JCTreeErrorCounter errorCounter = JCTreeErrorCounter.analyze(javacUnit);
+			if (errorCounter.getTotalErrorCount() > 0) {
+				LOG.debug("Parse quality for {}: {}", fileName, errorCounter);
+			}
 
 			// Add javadoc diagnostics as problems
 			List<IProblem> javadocProblems = new ArrayList<>();
@@ -296,12 +306,16 @@ public class JavacDOMParser {
 		if (source != null) {
 			source = normalizeVersion(source);
 			javacOptions.put(Option.SOURCE, source);
+			LOG.debug("Set javac -source to: {}", source);
+		} else {
+			LOG.warn("No source version in compiler options!");
 		}
 
 		String target = compilerOptions.get(JavaCoreConstants.COMPILER_CODEGEN_TARGET_PLATFORM);
 		if (target != null) {
 			target = normalizeVersion(target);
 			javacOptions.put(Option.TARGET, target);
+			LOG.debug("Set javac -target to: {}", target);
 		}
 
 		// Sourcepath - where javac can find other source files in the project
@@ -343,6 +357,32 @@ public class JavacDOMParser {
 			return "8";
 		}
 		return version;
+	}
+
+	/**
+	 * Convert Options to CLI-style arguments for getTask().
+	 * Some options need to be passed to getTask() explicitly to be properly handled
+	 * (just having them set in Options is not always sufficient).
+	 */
+	private static List<String> toCLIOptions(shaded.com.sun.tools.javac.util.Options opts) {
+		return opts.keySet().stream()
+			.map(shaded.com.sun.tools.javac.main.Option::lookup)
+			.filter(java.util.Objects::nonNull)
+			.filter(opt -> opt.getKind() != shaded.com.sun.tools.javac.main.Option.OptionKind.HIDDEN)
+			.map(opt ->
+				switch (opt.getArgKind()) {
+				case NONE -> java.util.stream.Stream.of(opt.primaryName);
+				case REQUIRED -> opt.primaryName.endsWith("=") || opt.primaryName.endsWith(":") ?
+					java.util.stream.Stream.of(opt.primaryName + opts.get(opt)) :
+					java.util.stream.Stream.of(opt.primaryName, opts.get(opt));
+				case ADJACENT -> {
+					var value = opts.get(opt);
+					yield value == null || value.isEmpty() ?
+						java.util.Arrays.stream(new String[0]) :
+						java.util.stream.Stream.of(opt.primaryName + opts.get(opt));
+				}
+			}).flatMap(java.util.function.Function.identity())
+			.toList();
 	}
 
 	/**
@@ -560,6 +600,11 @@ public class JavacDOMParser {
 		Map<String, CompilationUnit> results = new LinkedHashMap<>();
 		Context context = new Context();
 
+		// Track parse quality across the batch
+		int totalErrors = 0;
+		int totalNodes = 0;
+		int filesWithErrors = 0;
+
 		try {
 			// Set up shared Names table (for caching identifiers)
 			Names names = new Names(context) {
@@ -614,13 +659,17 @@ public class JavacDOMParser {
 				results.put(fileName, cu);
 			}
 
+			// Convert Options to CLI format
+			// Note: Some options must be passed explicitly to getTask(), not just in Context
+			List<String> taskOptions = toCLIOptions(javacOptions);
+
 			// Create compiler task with ALL files at once (shared Context!)
 			var compiler = ToolProvider.getSystemJavaCompiler();
 			JavacTask task = ((JavacTool) compiler).getTask(
 				null,           // out
 				fileManager,    // file manager
 				null,           // diagnostic listener already in context
-				List.of(),      // options already set in context
+				taskOptions,    // options must be passed explicitly
 				List.of(),      // classes to compile (none)
 				fileObjects,    // ALL source files
 				context         // SHARED context!
@@ -714,6 +763,15 @@ public class JavacDOMParser {
 					JavacConverter converter = new JavacConverter(ast, javacUnit, context, sourceContent, docEnabled, -1);
 					converter.populateCompilationUnit(result, javacUnit);
 
+					// Analyze parse quality
+					JCTreeErrorCounter errorCounter = JCTreeErrorCounter.analyze(javacUnit);
+					totalErrors += errorCounter.getTotalErrorCount();
+					totalNodes += errorCounter.getTotalNodeCount();
+					if (errorCounter.getTotalErrorCount() > 0) {
+						filesWithErrors++;
+						LOG.debug("Parse quality for {}: {}", matchingKey, errorCounter);
+					}
+
 					// Handle comments
 					List<Comment> comments = new ArrayList<>();
 					comments.addAll(converter.notAttachedComments);
@@ -732,6 +790,13 @@ public class JavacDOMParser {
 			// Context will be garbage collected
 		}
 
+		// Log aggregate parse quality statistics
+		if (totalNodes > 0) {
+			double errorRate = (100.0 * totalErrors) / totalNodes;
+			LOG.info("Batch parse quality: {} files, {} errors in {} nodes ({} files with errors, {}% error rate)",
+				results.size(), totalErrors, totalNodes, filesWithErrors, String.format("%.3f", errorRate));
+		}
+
 		return results;
 	}
 
@@ -748,12 +813,12 @@ public class JavacDOMParser {
 		}
 
 		private static URI toMemoryURI(String fileName) {
-			try {
-				// Use URI constructor to properly encode special characters (e.g., spaces)
-				return new URI("mem", "", fileName, null);
-			} catch (URISyntaxException e) {
-				throw new IllegalArgumentException("Invalid file name: " + fileName, e);
-			}
+			// Replace spaces and other problematic characters with percent-encoding
+			// This allows both simple filenames ("Test.java") and full paths with spaces
+			String encoded = fileName.replace(" ", "%20")
+					.replace("<", "%3C")
+					.replace(">", "%3E");
+			return URI.create("mem:///" + encoded);
 		}
 
 		@Override

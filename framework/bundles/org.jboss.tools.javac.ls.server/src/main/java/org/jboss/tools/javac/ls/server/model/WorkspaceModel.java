@@ -981,6 +981,8 @@ public class WorkspaceModel {
 		}
 
 		int filesIndexed = 0;
+		long totalBatchTime = 0;
+		int batchCount = 0;
 		indexCache.lockWrite();
 		try {
 			JavaIndex index = indexCache.getIndex();
@@ -993,10 +995,18 @@ public class WorkspaceModel {
 				List<Path> batch = javaFiles.subList(i, endIndex);
 
 				try {
+					long batchStart = System.currentTimeMillis();
 					int indexed = indexBatch(batch, classpath, index);
+					long batchTime = System.currentTimeMillis() - batchStart;
+					totalBatchTime += batchTime;
+					batchCount++;
+
 					filesIndexed += indexed;
-					LOG.debug("Indexed batch {}/{}: {} files", (i / batchSize) + 1,
-						(javaFiles.size() + batchSize - 1) / batchSize, indexed);
+					LOG.debug("Indexed batch {}/{}: {} files in {}ms (avg {}/file)",
+							(i / batchSize) + 1,
+							(javaFiles.size() + batchSize - 1) / batchSize,
+							indexed, batchTime,
+							String.format("%.1fms", (double)batchTime / indexed));
 				} catch (Exception e) {
 					LOG.error("Failed to index batch {}-{}, falling back to individual parsing", i, endIndex, e);
 					// Fallback: parse individually
@@ -1020,6 +1030,13 @@ public class WorkspaceModel {
 
 		long duration = System.currentTimeMillis() - startTime;
 		LOG.info("Indexed {} files in project '{}' in {}ms", filesIndexed, projectName, duration);
+		if (batchCount > 0) {
+			long avgBatchTime = totalBatchTime / batchCount;
+			long overhead = duration - totalBatchTime;
+			LOG.info("Batch statistics: {} batches, avg {}ms/batch, overhead={}ms ({}%)",
+					batchCount, avgBatchTime, overhead,
+					String.format("%.1f", 100.0 * overhead / duration));
+		}
 
 		return filesIndexed;
 	}
@@ -1596,6 +1613,7 @@ public class WorkspaceModel {
 			return 0;
 		}
 
+		long parseStart = System.currentTimeMillis();
 		// Parse all files in a single batch (shared Context, no binding resolution)
 		JavacDOMParser parser = new JavacDOMParser();
 		Map<String, CompilationUnit> units = parser.parseBatch(
@@ -1605,16 +1623,18 @@ public class WorkspaceModel {
 			null,  // compiler options
 			false  // NO binding resolution for indexing
 		);
+		long parseTime = System.currentTimeMillis() - parseStart;
 
-		// Index each parsed compilation unit
-		int indexed = 0;
-		for (Map.Entry<String, CompilationUnit> entry : units.entrySet()) {
+		long indexStart = System.currentTimeMillis();
+		// Index each parsed compilation unit in parallel
+		AtomicInteger indexed = new AtomicInteger(0);
+		units.entrySet().parallelStream().forEach(entry -> {
 			String fileName = entry.getKey();
 			CompilationUnit cu = entry.getValue();
 
 			if (cu == null) {
 				LOG.warn("Failed to parse file in batch: {}", fileName);
-				continue;
+				return;
 			}
 
 			try {
@@ -1628,13 +1648,20 @@ public class WorkspaceModel {
 				cu.accept(visitor);
 				visitor.finishIndexing();
 
-				indexed++;
+				indexed.incrementAndGet();
 			} catch (Exception e) {
 				LOG.error("Failed to index compilation unit: {}", fileName, e);
 			}
-		}
+		});
+		long indexTime = System.currentTimeMillis() - indexStart;
+		long totalTime = parseTime + indexTime;
 
-		return indexed;
+		LOG.info("Batch timing for {} files: parse={}ms index={}ms total={}ms (parse={} index={})",
+				indexed.get(), parseTime, indexTime, totalTime,
+				String.format("%.1f%%", 100.0 * parseTime / totalTime),
+				String.format("%.1f%%", 100.0 * indexTime / totalTime));
+
+		return indexed.get();
 	}
 
 	/**
@@ -1648,6 +1675,7 @@ public class WorkspaceModel {
 		try (Stream<Path> paths = Files.walk(rootDir)) {
 			paths.filter(Files::isRegularFile)
 				.filter(p -> p.toString().endsWith(".java"))
+				.filter(p -> !p.toString().endsWith(".qute.java"))
 				.forEach(javaFiles::add);
 		} catch (IOException e) {
 			LOG.error("Error finding Java files in directory: {}", rootDir, e);

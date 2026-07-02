@@ -96,17 +96,19 @@ public class JavaIndex {
 
 	/**
 	 * Add a type reference to the index.
+	 * Thread-safe for concurrent additions.
 	 */
 	public void addTypeReference(String qualifiedName, ReferenceEntry reference) {
-		typeReferences.computeIfAbsent(qualifiedName, k -> new ArrayList<>())
+		typeReferences.computeIfAbsent(qualifiedName, k -> Collections.synchronizedList(new ArrayList<>()))
 				.add(reference);
 	}
 
 	/**
 	 * Add a name reference to the index (for find usages, rename refactoring).
+	 * Thread-safe for concurrent additions.
 	 */
 	public void addNameReference(String name, ReferenceEntry reference) {
-		nameReferences.computeIfAbsent(name, k -> new ArrayList<>())
+		nameReferences.computeIfAbsent(name, k -> Collections.synchronizedList(new ArrayList<>()))
 				.add(reference);
 	}
 
