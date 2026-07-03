@@ -369,18 +369,21 @@ public class JavacDOMParser {
 			.map(shaded.com.sun.tools.javac.main.Option::lookup)
 			.filter(java.util.Objects::nonNull)
 			.filter(opt -> opt.getKind() != shaded.com.sun.tools.javac.main.Option.OptionKind.HIDDEN)
-			.map(opt ->
-				switch (opt.getArgKind()) {
-				case NONE -> java.util.stream.Stream.of(opt.primaryName);
-				case REQUIRED -> opt.primaryName.endsWith("=") || opt.primaryName.endsWith(":") ?
-					java.util.stream.Stream.of(opt.primaryName + opts.get(opt)) :
-					java.util.stream.Stream.of(opt.primaryName, opts.get(opt));
-				case ADJACENT -> {
-					var value = opts.get(opt);
-					yield value == null || value.isEmpty() ?
-						java.util.Arrays.stream(new String[0]) :
-						java.util.stream.Stream.of(opt.primaryName + opts.get(opt));
+			.map(opt -> {
+				var value = opts.get(opt);
+				// Skip options with null values - they're not properly configured
+				if (value == null && opt.getArgKind() != shaded.com.sun.tools.javac.main.Option.ArgKind.NONE) {
+					return java.util.stream.Stream.<String>empty();
 				}
+				return switch (opt.getArgKind()) {
+					case NONE -> java.util.stream.Stream.of(opt.primaryName);
+					case REQUIRED -> opt.primaryName.endsWith("=") || opt.primaryName.endsWith(":") ?
+						java.util.stream.Stream.of(opt.primaryName + value) :
+						java.util.stream.Stream.of(opt.primaryName, value);
+					case ADJACENT -> value.isEmpty() ?
+						java.util.stream.Stream.<String>empty() :
+						java.util.stream.Stream.of(opt.primaryName + value);
+				};
 			}).flatMap(java.util.function.Function.identity())
 			.toList();
 	}
