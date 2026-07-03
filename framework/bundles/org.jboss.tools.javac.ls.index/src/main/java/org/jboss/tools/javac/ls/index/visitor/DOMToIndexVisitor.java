@@ -13,9 +13,11 @@ package org.jboss.tools.javac.ls.index.visitor;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.jboss.tools.javac.ls.index.IndexChangeEvent;
@@ -70,6 +72,9 @@ public class DOMToIndexVisitor extends ASTVisitor {
 	private String packageName = "";
 	private final List<AbstractTypeDeclaration> enclosingTypes = new LinkedList<>();
 	private final List<String> enclosingTypeQualifiedNames = new LinkedList<>();
+
+	// Map simple names to fully qualified names from imports
+	private final Map<String, String> importMap = new HashMap<>();
 
 	public DOMToIndexVisitor(JavaIndex index, Path file) {
 		super(true);
@@ -408,8 +413,14 @@ public class DOMToIndexVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(ImportDeclaration importDecl) {
 		if (!importDecl.isOnDemand()) {
-			String typeName = importDecl.getName().getFullyQualifiedName();
-			index.addTypeReference(typeName,
+			String qualifiedName = importDecl.getName().getFullyQualifiedName();
+			// Extract simple name from qualified name
+			int lastDot = qualifiedName.lastIndexOf('.');
+			if (lastDot > 0) {
+				String simpleName = qualifiedName.substring(lastDot + 1);
+				importMap.put(simpleName, qualifiedName);
+			}
+			index.addTypeReference(qualifiedName,
 					new ReferenceEntry(createLocation(importDecl), ReferenceKind.TYPE_REFERENCE));
 		}
 		return true;
@@ -605,9 +616,19 @@ public class DOMToIndexVisitor extends ASTVisitor {
 
 	private String resolveTypeName(Name name) {
 		if (name instanceof SimpleName) {
-			// Without full resolution, we can only use the simple name
-			// This is a limitation - ideally we'd resolve to qualified name
-			return name.getFullyQualifiedName();
+			String simpleName = name.getFullyQualifiedName();
+			// Try to resolve using import map
+			String qualifiedName = importMap.get(simpleName);
+			if (qualifiedName != null) {
+				return qualifiedName;
+			}
+			// Check if it's in the same package (java.lang types are always available)
+			if (packageName != null && !packageName.isEmpty()) {
+				// Could be same-package reference, but we can't verify without filesystem lookup
+				// For now, return the simple name and let same-package types be unqualified
+			}
+			// Fall back to simple name (might be same-package or java.lang)
+			return simpleName;
 		} else if (name instanceof QualifiedName) {
 			return name.getFullyQualifiedName();
 		}
