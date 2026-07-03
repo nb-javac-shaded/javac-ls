@@ -250,7 +250,9 @@ public class JsonIndexPersistence implements IndexPersistence {
 	public void saveTypeReferences(Map<String, List<ReferenceEntry>> typeReferences) throws IOException {
 		ensureDirectoryExists();
 
-		// Split into TYPE_REFERENCE and ANNOTATION_USE
+		// Split into type-related references and annotations
+		// Type references include: TYPE_REFERENCE, CONSTRUCTOR_INVOCATION, METHOD_INVOCATION, etc.
+		// Since type_references.json contains MIXED kinds, we CANNOT omit the "kind" field
 		Map<String, List<ReferenceEntry>> typeRefs = new HashMap<>();
 		Map<String, List<ReferenceEntry>> annotationRefs = new HashMap<>();
 
@@ -262,10 +264,12 @@ public class JsonIndexPersistence implements IndexPersistence {
 				if (ref == null) {
 					continue;
 				}
-				if (ref.getKind() == ReferenceEntry.ReferenceKind.TYPE_REFERENCE) {
-					typeList.add(ref);
-				} else if (ref.getKind() == ReferenceEntry.ReferenceKind.ANNOTATION_USE) {
+				if (ref.getKind() == ReferenceEntry.ReferenceKind.ANNOTATION_USE) {
+					// Only annotations go to separate file (all same kind, can omit "kind" field)
 					annotationList.add(ref);
+				} else {
+					// Everything else goes to type_references.json (mixed kinds, MUST include "kind")
+					typeList.add(ref);
 				}
 			}
 
@@ -277,13 +281,13 @@ public class JsonIndexPersistence implements IndexPersistence {
 			}
 		}
 
-		// Save type references (without "kind" field)
+		// Save type references (WITH "kind" field - contains mixed kinds)
 		Path typeFile = baseDirectory.resolve(TYPE_REFERENCES_FILE);
 		try (Writer writer = Files.newBufferedWriter(typeFile, StandardCharsets.UTF_8)) {
-			typeRefGson.toJson(typeRefs, writer);
+			gson.toJson(typeRefs, writer);  // Use regular gson, not typeRefGson
 		}
 
-		// Save annotation references (without "kind" field)
+		// Save annotation references (without "kind" field - all ANNOTATION_USE)
 		Path annotationFile = baseDirectory.resolve(ANNOTATION_REFERENCES_FILE);
 		try (Writer writer = Files.newBufferedWriter(annotationFile, StandardCharsets.UTF_8)) {
 			annotationRefGson.toJson(annotationRefs, writer);
@@ -294,12 +298,12 @@ public class JsonIndexPersistence implements IndexPersistence {
 	public Map<String, List<ReferenceEntry>> loadTypeReferences() throws IOException {
 		Map<String, List<ReferenceEntry>> result = new HashMap<>();
 
-		// Load type references
+		// Load type references (WITH "kind" field - contains mixed kinds)
 		Path typeFile = baseDirectory.resolve(TYPE_REFERENCES_FILE);
 		if (Files.exists(typeFile)) {
 			try (Reader reader = Files.newBufferedReader(typeFile, StandardCharsets.UTF_8)) {
 				Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
-				Map<String, List<ReferenceEntry>> typeRefs = typeRefGson.fromJson(reader, type);
+				Map<String, List<ReferenceEntry>> typeRefs = gson.fromJson(reader, type);  // Use regular gson, not typeRefGson
 				if (typeRefs != null) {
 					result.putAll(typeRefs);
 				}
