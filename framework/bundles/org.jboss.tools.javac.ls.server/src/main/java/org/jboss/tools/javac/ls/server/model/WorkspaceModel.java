@@ -1068,20 +1068,20 @@ public class WorkspaceModel {
 
 			if (dirtyBatches.isEmpty()) {
 				LOG.debug("No dirty batches to rebatch");
-				return;
-			}
+			} else {
+				LOG.info("Rebatching {} dirty batches", dirtyBatches.size());
 
-			LOG.info("Rebatching {} dirty batches", dirtyBatches.size());
-
-			for (BatchInfo dirtyBatch : dirtyBatches) {
-				if (dirtyBatch.needsSplit) {
-					splitBatch(dirtyBatch, paths, index);
-				} else {
-					rebatchSingleBatch(dirtyBatch, paths, index);
+				for (BatchInfo dirtyBatch : dirtyBatches) {
+					if (dirtyBatch.needsSplit) {
+						splitBatch(dirtyBatch, paths, index);
+					} else {
+						rebatchSingleBatch(dirtyBatch, paths, index);
+					}
 				}
 			}
 
-			// Clear individually-parsed tracking
+			// Clear individually-parsed tracking regardless of whether we rebatched
+			// (we hit the threshold, so we should reset the counter)
 			indexCache.clearIndividuallyParsedFiles();
 
 		} finally {
