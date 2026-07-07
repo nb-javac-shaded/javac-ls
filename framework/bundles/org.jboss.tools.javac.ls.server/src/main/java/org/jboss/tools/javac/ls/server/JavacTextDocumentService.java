@@ -310,15 +310,9 @@ public class JavacTextDocumentService implements TextDocumentService {
 				compilerOptions.put("javac.sourcepath", String.join(java.io.File.pathSeparator, sourcepath));
 			}
 
-			// Use DOMCache to get/parse the compilation unit with bindings
+			// Parse file on-demand with bindings
 			URI fileUri = filePath.toUri();
-			return workspace.getDOMCache().getCompilationUnit(
-				fileUri,
-				classpath,
-				shaded.org.eclipse.jdt.core.dom.AST.JLS21,
-				compilerOptions,
-				true // resolve bindings
-			);
+			return workspace.parseFile(fileUri, classpath, compilerOptions);
 		} catch (Exception e) {
 			LOG.error("Error parsing file: {}", filePath, e);
 			return null;

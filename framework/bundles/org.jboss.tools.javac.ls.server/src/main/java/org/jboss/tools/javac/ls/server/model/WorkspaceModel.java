@@ -41,7 +41,6 @@ import org.jboss.tools.javac.ls.api.dao.InitializationState;
 import org.jboss.tools.javac.ls.index.store.JavaIndex;
 import org.jboss.tools.javac.ls.index.visitor.DOMToIndexVisitor;
 import org.jboss.tools.javac.ls.parser.bindings.JavacDOMParser;
-import org.jboss.tools.javac.ls.parser.dom.cache.DOMCache;
 import org.jboss.tools.javac.ls.server.index.JavaIndexCache;
 import org.jboss.tools.javac.ls.server.model.classpath.ClasspathCache;
 import org.jboss.tools.javac.ls.server.model.classpath.IJavacClasspathEntry;
@@ -72,7 +71,6 @@ public class WorkspaceModel {
 	private final ClasspathCache classpathCache;
 	private final ProjectClasspathDiscovery classpathDiscovery;
 	private final JavaIndexCache indexCache;
-	private final DOMCache domCache;
 	private final ExecutorService backgroundExecutor;
 	private final ScheduledExecutorService periodicScanExecutor;
 	private final Set<String> projectsCurrentlyScanning;
@@ -95,7 +93,6 @@ public class WorkspaceModel {
 		this.classpathCache = new ClasspathCache(workspaceDir);
 		this.classpathDiscovery = new ProjectClasspathDiscovery(classpathCache);
 		this.indexCache = new JavaIndexCache(new File(workspaceDir, INDEX_DIR).toPath());
-		this.domCache = new DOMCache();
 		this.listeners = new CopyOnWriteArrayList<>();
 		this.backgroundExecutor = Executors.newSingleThreadExecutor(r -> {
 			Thread t = new Thread(r, "WorkspaceModel-Background");
@@ -461,12 +458,38 @@ public class WorkspaceModel {
 	}
 
 	/**
-	 * Get the DOM cache.
+	 * Parse a file on-demand with bindings resolved.
+	 * Does not cache the result - parses fresh every time.
 	 *
-	 * @return the DOM cache
+	 * @param fileUri URI of the file to parse
+	 * @param classpath classpath for resolving bindings
+	 * @param compilerOptions compiler options (can be null)
+	 * @return parsed CompilationUnit with bindings, or null if parsing fails
 	 */
-	public DOMCache getDOMCache() {
-		return domCache;
+	public CompilationUnit parseFile(URI fileUri, List<File> classpath, Map<String, String> compilerOptions) {
+		File sourceFile = new File(fileUri);
+		if (!sourceFile.exists()) {
+			LOG.warn("Source file does not exist: {}", fileUri);
+			return null;
+		}
+
+		try {
+			String sourceContent = new String(Files.readAllBytes(Paths.get(fileUri)));
+			String fileName = sourceFile.getAbsolutePath();
+
+			JavacDOMParser parser = new JavacDOMParser();
+			return parser.parse(
+				sourceContent,
+				fileName,
+				classpath,
+				AST.JLS21,
+				compilerOptions,
+				true // resolve bindings
+			);
+		} catch (IOException e) {
+			LOG.error("Failed to read source file: {}", fileUri, e);
+			return null;
+		}
 	}
 
 	/**
@@ -486,41 +509,30 @@ public class WorkspaceModel {
 		// Scan for changed files first to ensure diagnostics are up-to-date
 		scanAndReparseChangedFiles(projectName);
 
-		// Get classpath for parsing
-		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
-		List<File> classpath = new ArrayList<>();
-		for (IJavacClasspathEntry entry : classpathEntries) {
-			if (entry.getPath() != null) {
-				classpath.add(new File(entry.getPath()));
-			}
-		}
-
 		DiagnosticList result = new DiagnosticList(projectName);
+
+		// Get index
+		JavaIndex index = indexCache.getIndex();
 
 		// Find all Java files in the project
 		List<Path> javaFiles = findJavaFiles(Paths.get(project.getPath()));
 
-		// Collect diagnostics from each file
+		// Collect diagnostics from index for each file
 		for (Path file : javaFiles) {
-			CompilationUnit cu = domCache.getCompilationUnit(
-					file.toUri(),
-					classpath,
-					AST.JLS21,
-					null, // compiler options
-					true  // resolve bindings - needed for diagnostics
-			);
+			List<String> diagnosticJsonList = index.getDiagnostics(file);
 
-			if (cu != null) {
-				IProblem[] problems = cu.getProblems();
-				if (problems != null) {
-					for (IProblem problem : problems) {
-						result.addDiagnostic(convertProblemToDiagnostic(problem, file.toString()));
-					}
+			// Deserialize diagnostics from JSON
+			for (String json : diagnosticJsonList) {
+				try {
+					Diagnostic diag = gson.fromJson(json, Diagnostic.class);
+					result.addDiagnostic(diag);
+				} catch (Exception e) {
+					LOG.error("Failed to deserialize diagnostic from index for file {}: {}", file, json, e);
 				}
 			}
 		}
 
-		LOG.debug("Collected {} diagnostics for project {}", result.getDiagnostics().size(), projectName);
+		LOG.debug("Retrieved {} diagnostics for project {} from index", result.getDiagnostics().size(), projectName);
 		return result;
 	}
 
@@ -552,36 +564,23 @@ public class WorkspaceModel {
 		// Scan for changed files first to ensure diagnostics are up-to-date
 		scanAndReparseChangedFiles(projectName);
 
-		// Get classpath for parsing
-		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
-		List<File> classpath = new ArrayList<>();
-		for (IJavacClasspathEntry entry : classpathEntries) {
-			if (entry.getPath() != null) {
-				classpath.add(new File(entry.getPath()));
-			}
-		}
-
 		DiagnosticList result = new DiagnosticList(projectName, filePath);
 
-		// Get compilation unit from cache
-		CompilationUnit cu = domCache.getCompilationUnit(
-				file.toUri(),
-				classpath,
-				AST.JLS21,
-				null, // compiler options
-				true  // resolve bindings - needed for diagnostics
-		);
+		// Get diagnostics from index (already extracted during indexing)
+		JavaIndex index = indexCache.getIndex();
+		List<String> diagnosticJsonList = index.getDiagnostics(file);
 
-		if (cu != null) {
-			IProblem[] problems = cu.getProblems();
-			if (problems != null) {
-				for (IProblem problem : problems) {
-					result.addDiagnostic(convertProblemToDiagnostic(problem, filePath));
-				}
+		// Deserialize diagnostics from JSON
+		for (String json : diagnosticJsonList) {
+			try {
+				Diagnostic diag = gson.fromJson(json, Diagnostic.class);
+				result.addDiagnostic(diag);
+			} catch (Exception e) {
+				LOG.error("Failed to deserialize diagnostic from index: {}", json, e);
 			}
 		}
 
-		LOG.debug("Collected {} diagnostics for file {}", result.getDiagnostics().size(), filePath);
+		LOG.debug("Retrieved {} diagnostics for file {} from index", result.getDiagnostics().size(), filePath);
 		return result;
 	}
 
@@ -860,6 +859,9 @@ public class WorkspaceModel {
 				cu.accept(visitor);
 				visitor.finishIndexing();
 
+				// Extract and store diagnostics
+				storeDiagnosticsForFile(index, javaFile, cu);
+
 				indexed++;
 
 				LOG.debug("Indexed file from batch: {} ({} problems)",
@@ -887,14 +889,8 @@ public class WorkspaceModel {
 			Map<String, String> compilerOptions, JavaIndex index) {
 		URI fileUri = javaFile.toUri();
 
-		// Parse with bindings and cache the result
-		CompilationUnit cu = domCache.getCompilationUnit(
-				fileUri,
-				classpath,
-				AST.JLS21,
-				compilerOptions,
-				true  // resolve bindings
-		);
+		// Parse with bindings to index the file
+		CompilationUnit cu = parseFile(fileUri, classpath, compilerOptions);
 
 		if (cu == null) {
 			LOG.warn("Failed to parse file: {}", javaFile);
@@ -909,8 +905,36 @@ public class WorkspaceModel {
 		cu.accept(visitor);
 		visitor.finishIndexing();
 
+		// Extract and store diagnostics
+		storeDiagnosticsForFile(index, javaFile, cu);
+
 		LOG.debug("Indexed file with bindings: {} ({} problems)",
 				javaFile, cu.getProblems() != null ? cu.getProblems().length : 0);
+	}
+
+	/**
+	 * Extract diagnostics from a CompilationUnit and store in the index.
+	 *
+	 * @param index the index to store diagnostics in
+	 * @param file the source file
+	 * @param cu the compilation unit with problems
+	 */
+	private void storeDiagnosticsForFile(JavaIndex index, Path file, CompilationUnit cu) {
+		IProblem[] problems = cu.getProblems();
+		if (problems == null || problems.length == 0) {
+			index.storeDiagnostics(file, Collections.emptyList());
+			return;
+		}
+
+		// Convert problems to JSON strings for storage
+		List<String> diagnosticStrings = new ArrayList<>();
+		for (IProblem problem : problems) {
+			Diagnostic diag = convertProblemToDiagnostic(problem, file.toString());
+			String json = gson.toJson(diag);
+			diagnosticStrings.add(json);
+		}
+
+		index.storeDiagnostics(file, diagnosticStrings);
 	}
 
 	/**
@@ -1614,14 +1638,14 @@ public class WorkspaceModel {
 		}
 
 		long parseStart = System.currentTimeMillis();
-		// Parse all files in a single batch (shared Context, no binding resolution)
+		// Parse all files in a single batch (shared Context, WITH binding resolution for diagnostics)
 		JavacDOMParser parser = new JavacDOMParser();
 		Map<String, CompilationUnit> units = parser.parseBatch(
 			sourceFiles,
 			classpath,
 			AST.JLS21,
 			null,  // compiler options
-			false  // NO binding resolution for indexing
+			true  // WITH binding resolution to collect diagnostics
 		);
 		long parseTime = System.currentTimeMillis() - parseStart;
 
@@ -1682,6 +1706,9 @@ public class WorkspaceModel {
 				DOMToIndexVisitor visitor = new DOMToIndexVisitor(index, javaFile);
 				cu.accept(visitor);
 				visitor.finishIndexing();
+
+				// Store diagnostics from this compilation unit
+				storeDiagnosticsForFile(index, javaFile, cu);
 
 				indexed.incrementAndGet();
 			} catch (Exception e) {

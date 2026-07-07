@@ -88,18 +88,15 @@ public class ErrorTypeScanner {
 				.map(entry -> new File(entry.getPath()))
 				.collect(java.util.stream.Collectors.toList());
 
-			// Get the cached CompilationUnit (Eclipse JDT DOM)
-			// Use the same parameters as during indexing
-			CompilationUnit cu = workspace.getDOMCache().getCompilationUnit(
+			// Parse the file on-demand with bindings
+			CompilationUnit cu = workspace.parseFile(
 				file.toUri(),
 				classpath,
-				shaded.org.eclipse.jdt.core.dom.AST.JLS21,
-				null, // compiler options
-				true  // resolve bindings
+				null // compiler options
 			);
 
 			if (cu == null) {
-				return null; // File not in cache
+				return null; // Failed to parse
 			}
 
 			// Scan the Eclipse JDT DOM AST for unresolved bindings

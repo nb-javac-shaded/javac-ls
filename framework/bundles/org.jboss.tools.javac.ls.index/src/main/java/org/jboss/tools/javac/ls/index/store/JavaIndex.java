@@ -59,6 +59,9 @@ public class JavaIndex {
 	private final Map<Path, Set<String>> fileToDeclaredTypes = new ConcurrentHashMap<>();
 	private final Map<Path, Long> fileTimestamps = new ConcurrentHashMap<>();
 
+	// Diagnostics (compilation errors and warnings per file)
+	private final Map<Path, List<String>> fileDiagnostics = new ConcurrentHashMap<>();
+
 	// Listeners
 	private final List<IndexChangeListener> listeners = new CopyOnWriteArrayList<>();
 
@@ -124,6 +127,41 @@ public class JavaIndex {
 	}
 
 	/**
+	 * Store diagnostics (compilation errors/warnings) for a file.
+	 * Diagnostics are serialized as strings to avoid keeping full IProblem objects in memory.
+	 *
+	 * @param file the source file
+	 * @param diagnosticStrings list of diagnostic strings (JSON or formatted text)
+	 */
+	public void storeDiagnostics(Path file, List<String> diagnosticStrings) {
+		if (diagnosticStrings == null || diagnosticStrings.isEmpty()) {
+			fileDiagnostics.remove(file);
+		} else {
+			fileDiagnostics.put(file, new ArrayList<>(diagnosticStrings));
+		}
+	}
+
+	/**
+	 * Get diagnostics for a specific file.
+	 *
+	 * @param file the source file
+	 * @return list of diagnostic strings, or empty list if none
+	 */
+	public List<String> getDiagnostics(Path file) {
+		List<String> diags = fileDiagnostics.get(file);
+		return diags != null ? new ArrayList<>(diags) : Collections.emptyList();
+	}
+
+	/**
+	 * Get all files that have diagnostics.
+	 *
+	 * @return set of file paths with diagnostics
+	 */
+	public Set<Path> getFilesWithDiagnostics() {
+		return new HashSet<>(fileDiagnostics.keySet());
+	}
+
+	/**
 	 * Remove all index entries for a file (for incremental updates).
 	 */
 	public void removeFile(Path file) {
@@ -157,6 +195,7 @@ public class JavaIndex {
 			}
 		}
 		fileTimestamps.remove(file);
+		fileDiagnostics.remove(file);
 		fireIndexChanged(new IndexChangeEvent(file, ChangeKind.FILE_REMOVED));
 	}
 
