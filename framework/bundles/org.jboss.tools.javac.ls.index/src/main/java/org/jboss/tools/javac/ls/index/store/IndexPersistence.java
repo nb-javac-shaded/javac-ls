@@ -192,4 +192,18 @@ public interface IndexPersistence {
 	 * @throws IOException if load fails
 	 */
 	Map<Path, List<ReferenceEntry>> loadFileNameReferences() throws IOException;
+
+	/**
+	 * Save file path registry (maps fileId to Path).
+	 * @param pathRegistry map of Path to file ID
+	 * @throws IOException if save fails
+	 */
+	void saveFilePathRegistry(Map<Path, Integer> pathRegistry) throws IOException;
+
+	/**
+	 * Load file path registry.
+	 * @return map of Path to file ID
+	 * @throws IOException if load fails
+	 */
+	Map<Path, Integer> loadFilePathRegistry() throws IOException;
 }

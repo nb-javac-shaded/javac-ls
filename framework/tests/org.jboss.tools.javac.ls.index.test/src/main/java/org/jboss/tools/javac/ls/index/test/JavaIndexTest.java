@@ -170,8 +170,8 @@ public class JavaIndexTest {
 
 	@Test
 	public void testTypeReferences() {
-		Location loc1 = new Location(testFile, 10, 20, 1, 5);
-		Location loc2 = new Location(testFile, 30, 40, 2, 10);
+		Location loc1 = new Location(testFile, 10, 20, 1, 5, index);
+		Location loc2 = new Location(testFile, 30, 40, 2, 10, index);
 
 		index.addTypeReference("com.example.MyClass",
 				new ReferenceEntry(loc1, ReferenceEntry.ReferenceKind.TYPE_REFERENCE), testFile);
@@ -184,8 +184,8 @@ public class JavaIndexTest {
 
 	@Test
 	public void testNameReferences() {
-		Location loc1 = new Location(testFile, 10, 20, 1, 5);
-		Location loc2 = new Location(testFile, 30, 40, 2, 10);
+		Location loc1 = new Location(testFile, 10, 20, 1, 5, index);
+		Location loc2 = new Location(testFile, 30, 40, 2, 10, index);
 
 		index.addNameReference("myVariable",
 				new ReferenceEntry(loc1, ReferenceEntry.ReferenceKind.NAME_REFERENCE), testFile);

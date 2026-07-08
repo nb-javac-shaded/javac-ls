@@ -160,7 +160,7 @@ public class JavaIndexCacheTest {
 			JavaIndex index = cache.getIndex();
 			TypeDeclarationEntry type = new TypeDeclarationEntry();
 			type.setQualifiedName("com.example.Test");
-			type.setLocation(new Location(testFile, 0, 100, 1, 1));
+			type.setLocation(new Location(testFile, 0, 100, 1, 1, index));
 			index.addType(type);
 
 			Set<String> declaredTypes = new HashSet<>();
@@ -311,7 +311,7 @@ public class JavaIndexCacheTest {
 			type.setKind(TypeKind.CLASS);
 			type.setSuperclass("java.lang.Object");
 			type.setInterfaces(Arrays.asList("java.io.Serializable", "java.lang.Comparable"));
-			type.setLocation(new Location(Paths.get("/test/Complex.java"), 100, 500, 5, 10));
+			type.setLocation(new Location(Paths.get("/test/Complex.java"), 100, 500, 5, 10, index));
 			index.addType(type);
 		} finally {
 			cache.unlockWrite();

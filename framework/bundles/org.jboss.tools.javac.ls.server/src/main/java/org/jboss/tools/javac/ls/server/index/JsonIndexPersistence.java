@@ -66,9 +66,11 @@ public class JsonIndexPersistence implements IndexPersistence {
 	private static final String FILE_TIMESTAMPS_FILE = "file_timestamps.json";
 	private static final String FILE_TYPE_REFERENCES_FILE = "file_type_references.json";
 	private static final String FILE_NAME_REFERENCES_FILE = "file_name_references.json";
+	private static final String FILE_PATH_REGISTRY_FILE = "file_path_registry.json";
 
 	public JsonIndexPersistence(Path baseDirectory) {
 		this.baseDirectory = baseDirectory;
+
 		this.gson = new GsonBuilder()
 				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
 				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
@@ -570,6 +572,44 @@ public class JsonIndexPersistence implements IndexPersistence {
 		}
 	}
 
+	@Override
+	public void saveFilePathRegistry(Map<Path, Integer> pathRegistry) throws IOException {
+		ensureDirectoryExists();
+		Path file = baseDirectory.resolve(FILE_PATH_REGISTRY_FILE);
+
+		// Convert Path keys to String for JSON serialization
+		Map<String, Integer> stringMap = new HashMap<>();
+		for (Map.Entry<Path, Integer> entry : pathRegistry.entrySet()) {
+			stringMap.put(entry.getKey().toString(), entry.getValue());
+		}
+
+		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+			gson.toJson(stringMap, writer);
+		}
+	}
+
+	@Override
+	public Map<Path, Integer> loadFilePathRegistry() throws IOException {
+		Path file = baseDirectory.resolve(FILE_PATH_REGISTRY_FILE);
+		if (!Files.exists(file)) {
+			return new HashMap<>();
+		}
+
+		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			Type type = new TypeToken<Map<String, Integer>>(){}.getType();
+			Map<String, Integer> stringMap = gson.fromJson(reader, type);
+
+			// Convert String keys back to Path
+			Map<Path, Integer> result = new HashMap<>();
+			if (stringMap != null) {
+				for (Map.Entry<String, Integer> entry : stringMap.entrySet()) {
+					result.put(Paths.get(entry.getKey()), entry.getValue());
+				}
+			}
+			return result;
+		}
+	}
+
 	private void ensureDirectoryExists() throws IOException {
 		if (!Files.exists(baseDirectory)) {
 			Files.createDirectories(baseDirectory);
@@ -592,6 +632,7 @@ public class JsonIndexPersistence implements IndexPersistence {
 			Files.deleteIfExists(baseDirectory.resolve(FILE_TIMESTAMPS_FILE));
 			Files.deleteIfExists(baseDirectory.resolve(FILE_TYPE_REFERENCES_FILE));
 			Files.deleteIfExists(baseDirectory.resolve(FILE_NAME_REFERENCES_FILE));
+			Files.deleteIfExists(baseDirectory.resolve(FILE_PATH_REGISTRY_FILE));
 		}
 	}
 }

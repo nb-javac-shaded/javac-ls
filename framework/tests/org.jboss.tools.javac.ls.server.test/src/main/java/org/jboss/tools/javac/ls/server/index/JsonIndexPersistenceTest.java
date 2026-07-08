@@ -24,6 +24,7 @@ import org.jboss.tools.javac.ls.index.model.MethodDeclarationEntry;
 import org.jboss.tools.javac.ls.index.model.ReferenceEntry;
 import org.jboss.tools.javac.ls.index.model.TypeDeclarationEntry;
 import org.jboss.tools.javac.ls.index.model.TypeDeclarationEntry.TypeKind;
+import org.jboss.tools.javac.ls.index.store.JavaIndex;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -32,11 +33,13 @@ public class JsonIndexPersistenceTest {
 
 	private Path tempDir;
 	private JsonIndexPersistence persistence;
+	private JavaIndex index;
 
 	@Before
 	public void setUp() throws IOException {
 		tempDir = Files.createTempDirectory("json-index-test");
 		persistence = new JsonIndexPersistence(tempDir);
+		index = new JavaIndex();
 	}
 
 	@After
@@ -143,11 +146,11 @@ public class JsonIndexPersistenceTest {
 		Path file = Paths.get("/test/Example.java");
 		List<ReferenceEntry> refs = new ArrayList<>();
 		refs.add(new ReferenceEntry(
-			new Location(file, 10, 20, 1, 5),
+			new Location(file, 10, 20, 1, 5, index),
 			ReferenceEntry.ReferenceKind.TYPE_REFERENCE
 		));
 		refs.add(new ReferenceEntry(
-			new Location(file, 30, 40, 2, 10),
+			new Location(file, 30, 40, 2, 10, index),
 			ReferenceEntry.ReferenceKind.CONSTRUCTOR_INVOCATION
 		));
 
@@ -178,7 +181,7 @@ public class JsonIndexPersistenceTest {
 		Path file = Paths.get("/test/Example.java");
 		List<ReferenceEntry> refs = new ArrayList<>();
 		refs.add(new ReferenceEntry(
-			new Location(file, 15, 25, 1, 8),
+			new Location(file, 15, 25, 1, 8, index),
 			ReferenceEntry.ReferenceKind.NAME_REFERENCE
 		));
 
@@ -306,7 +309,7 @@ public class JsonIndexPersistenceTest {
 		type.setSuperclass("com.example.Base");
 		type.setInterfaces(Arrays.asList("java.io.Serializable", "java.lang.Comparable"));
 		type.setModifiers(0x0001 | 0x0400); // PUBLIC | ABSTRACT
-		type.setLocation(new Location(Paths.get("/test/Complex.java"), 100, 500, 5, 25));
+		type.setLocation(new Location(Paths.get("/test/Complex.java"), 100, 500, 5, 25, index));
 
 		Map<String, TypeDeclarationEntry> types = new HashMap<>();
 		types.put(type.getQualifiedName(), type);

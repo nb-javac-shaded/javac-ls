@@ -97,7 +97,7 @@ public class WorkspaceModelIndexIntegrationTest {
 			type.setKind(TypeKind.CLASS);
 			type.setSuperclass("java.lang.Object");
 			type.setInterfaces(Arrays.asList("java.io.Serializable"));
-			type.setLocation(new Location(Paths.get("/test/MyClass.java"), 0, 100, 1, 1));
+			type.setLocation(new Location(Paths.get("/test/MyClass.java"), 0, 100, 1, 1, index));
 			index.addType(type);
 		} finally {
 			indexCache.unlockWrite();

@@ -89,27 +89,27 @@ public class SearchEngine {
 
         if (pattern instanceof TypePattern) {
             // Find files that reference or use this type
-            addFilesFromReferences(index.findTypeUsages(searchString), candidates);
-            addFilesFromReferences(index.findNameUsages(searchString), candidates);
+            addFilesFromReferences(index.findTypeUsages(searchString), candidates, index);
+            addFilesFromReferences(index.findNameUsages(searchString), candidates, index);
         } else if (pattern instanceof MethodPattern) {
             // Find files that reference or declare methods with this name
-            addFilesFromReferences(index.findNameUsages(searchString), candidates);
+            addFilesFromReferences(index.findNameUsages(searchString), candidates, index);
         } else if (pattern instanceof FieldPattern) {
             // Find files that reference fields with this name
-            addFilesFromReferences(index.findNameUsages(searchString), candidates);
+            addFilesFromReferences(index.findNameUsages(searchString), candidates, index);
 
             // Also find files that declare fields with this name
             for (FieldDeclarationEntry field : index.getFields().values()) {
                 if (field.getFieldName().equals(searchString)) {
-                    if (field.getLocation() != null && field.getLocation().getFile() != null) {
-                        candidates.add(field.getLocation().getFile());
+                    if (field.getLocation() != null && field.getLocation().getFile(index.getPathRegistry()) != null) {
+                        candidates.add(field.getLocation().getFile(index.getPathRegistry()));
                     }
                 }
             }
         } else if (pattern instanceof ConstructorPattern) {
             // Find files that reference this constructor (by type name)
-            addFilesFromReferences(index.findTypeUsages(searchString), candidates);
-            addFilesFromReferences(index.findNameUsages(searchString), candidates);
+            addFilesFromReferences(index.findTypeUsages(searchString), candidates, index);
+            addFilesFromReferences(index.findNameUsages(searchString), candidates, index);
         }
 
         return candidates;
@@ -118,10 +118,10 @@ public class SearchEngine {
     /**
      * Extracts file paths from reference entries and adds them to the candidate set.
      */
-    private void addFilesFromReferences(Collection<ReferenceEntry> references, Set<Path> candidates) {
+    private void addFilesFromReferences(Collection<ReferenceEntry> references, Set<Path> candidates, JavaIndex index) {
         for (ReferenceEntry ref : references) {
-            if (ref.getLocation() != null && ref.getLocation().getFile() != null) {
-                candidates.add(ref.getLocation().getFile());
+            if (ref.getLocation() != null && ref.getLocation().getFile(index.getPathRegistry()) != null) {
+                candidates.add(ref.getLocation().getFile(index.getPathRegistry()));
             }
         }
     }

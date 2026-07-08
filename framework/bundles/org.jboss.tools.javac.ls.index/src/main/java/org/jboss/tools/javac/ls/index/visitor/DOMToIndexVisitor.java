@@ -642,6 +642,6 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		int line = cu.getLineNumber(startOffset);
 		int column = cu.getColumnNumber(startOffset);
 
-		return new Location(file, startOffset, endOffset, line, column);
+		return new Location(file, startOffset, endOffset, line, column, index);
 	}
 }

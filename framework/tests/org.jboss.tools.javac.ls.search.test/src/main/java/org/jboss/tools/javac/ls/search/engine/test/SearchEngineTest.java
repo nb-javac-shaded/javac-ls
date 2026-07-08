@@ -46,7 +46,7 @@ public class SearchEngineTest {
 
         // Index type references
         index.addTypeReference("MyClass", new ReferenceEntry(
-            new Location(file2, 30, 37, 1, 30),
+            new Location(file2, 30, 37, 1, 30, index),
             ReferenceKind.TYPE_REFERENCE
         ), file2);
     }

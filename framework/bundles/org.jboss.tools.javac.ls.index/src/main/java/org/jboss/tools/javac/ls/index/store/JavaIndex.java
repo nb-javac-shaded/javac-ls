@@ -66,6 +66,9 @@ public class JavaIndex {
 	// Diagnostics (compilation errors and warnings per file)
 	private final Map<Path, List<String>> fileDiagnostics = new ConcurrentHashMap<>();
 
+	// File path registry (string interning for paths to reduce memory usage)
+	private final FilePathRegistry pathRegistry = new FilePathRegistry();
+
 	// Listeners
 	private final List<IndexChangeListener> listeners = new CopyOnWriteArrayList<>();
 
@@ -453,6 +456,7 @@ public class JavaIndex {
 		persistence.saveFileTimestamps(new HashMap<>(fileTimestamps));
 		persistence.saveFileTypeReferences(convertPathListHashMap(fileTypeReferences));
 		persistence.saveFileNameReferences(convertPathListHashMap(fileNameReferences));
+		persistence.saveFilePathRegistry(pathRegistry.getAllPaths());
 	}
 
 	/**
@@ -470,6 +474,13 @@ public class JavaIndex {
 		fileTimestamps.clear();
 		fileTypeReferences.clear();
 		fileNameReferences.clear();
+		pathRegistry.clear();
+
+		// Load file path registry first (needed to resolve file IDs in other structures)
+		Map<Path, Integer> loadedPathRegistry = persistence.loadFilePathRegistry();
+		if (loadedPathRegistry != null) {
+			pathRegistry.loadPaths(loadedPathRegistry);
+		}
 
 		Map<String, TypeDeclarationEntry> loadedTypes = persistence.loadTypes();
 		if (loadedTypes != null) {
@@ -536,6 +547,7 @@ public class JavaIndex {
 				types.size(), methods.size(), fields.size());
 	}
 
+
 	private Map<String, Set<String>> convertToHashMap(Map<String, Set<String>> source) {
 		Map<String, Set<String>> result = new HashMap<>();
 		for (Map.Entry<String, Set<String>> entry : source.entrySet()) {
@@ -576,5 +588,37 @@ public class JavaIndex {
 
 	public int getIndexedFileCount() {
 		return fileToDeclaredTypes.size();
+	}
+
+	// ===== File Path Registry =====
+
+	/**
+	 * Register a file path and get its unique ID.
+	 * This is used to reduce memory usage by storing paths only once.
+	 *
+	 * @param path the file path
+	 * @return unique integer ID for this path
+	 */
+	public int registerPath(Path path) {
+		return pathRegistry.getOrRegister(path);
+	}
+
+	/**
+	 * Resolve a file ID to its path.
+	 *
+	 * @param fileId the file path ID
+	 * @return the Path, or null if ID is invalid
+	 */
+	public Path getPath(int fileId) {
+		return pathRegistry.getPath(fileId);
+	}
+
+	/**
+	 * Get the file path registry for advanced operations.
+	 *
+	 * @return the registry
+	 */
+	public FilePathRegistry getPathRegistry() {
+		return pathRegistry;
 	}
 }
