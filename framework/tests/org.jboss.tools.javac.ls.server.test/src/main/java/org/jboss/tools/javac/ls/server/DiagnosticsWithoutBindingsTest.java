@@ -38,7 +38,7 @@ public class DiagnosticsWithoutBindingsTest {
 			}
 			""";
 
-		CompilationUnit cu = parseWithoutBindings(code);
+		CompilationUnit cu = parseWithoutBindings(code, "SyntaxErrors.java");
 		IProblem[] problems = cu.getProblems();
 
 		System.out.println("\n=== Syntax Errors (without bindings) ===");
@@ -71,7 +71,7 @@ public class DiagnosticsWithoutBindingsTest {
 			}
 			""";
 
-		CompilationUnit cu = parseWithoutBindings(code);
+		CompilationUnit cu = parseWithoutBindings(code, "SemanticErrors.java");
 		IProblem[] problems = cu.getProblems();
 
 		System.out.println("\n=== Semantic Errors (without bindings) ===");
@@ -93,7 +93,7 @@ public class DiagnosticsWithoutBindingsTest {
 			}
 			""";
 
-		CompilationUnit cu = parseWithoutBindings(code);
+		CompilationUnit cu = parseWithoutBindings(code, "MissingImport.java");
 		IProblem[] problems = cu.getProblems();
 
 		System.out.println("\n=== Missing Import (without bindings) ===");
@@ -120,7 +120,7 @@ public class DiagnosticsWithoutBindingsTest {
 			}
 			""";
 
-		CompilationUnit cu = parseWithoutBindings(code);
+		CompilationUnit cu = parseWithoutBindings(code, "ValidCode.java");
 		IProblem[] problems = cu.getProblems();
 
 		System.out.println("\n=== Valid Code (without bindings) ===");
@@ -149,10 +149,10 @@ public class DiagnosticsWithoutBindingsTest {
 
 		System.out.println("\n=== Comparing With vs Without Bindings ===");
 
-		CompilationUnit cuWithoutBindings = parseWithoutBindings(code);
+		CompilationUnit cuWithoutBindings = parseWithoutBindings(code, "CompareBindings.java");
 		IProblem[] problemsWithout = cuWithoutBindings.getProblems();
 
-		CompilationUnit cuWithBindings = parseWithBindings(code);
+		CompilationUnit cuWithBindings = parseWithBindings(code, "CompareBindings.java");
 		IProblem[] problemsWith = cuWithBindings.getProblems();
 
 		System.out.println("\nWithout bindings: " + problemsWithout.length + " problems");
@@ -162,11 +162,11 @@ public class DiagnosticsWithoutBindingsTest {
 		printProblems(problemsWith);
 	}
 
-	private CompilationUnit parseWithoutBindings(String source) throws Exception {
+	private CompilationUnit parseWithoutBindings(String source, String filename) throws Exception {
 		JavacDOMParser parser = new JavacDOMParser();
 		return parser.parse(
 			source,
-			"Test.java",
+			filename,
 			new ArrayList<File>(), // empty classpath
 			AST.JLS21,
 			null, // no compiler options
@@ -174,11 +174,11 @@ public class DiagnosticsWithoutBindingsTest {
 		);
 	}
 
-	private CompilationUnit parseWithBindings(String source) throws Exception {
+	private CompilationUnit parseWithBindings(String source, String filename) throws Exception {
 		JavacDOMParser parser = new JavacDOMParser();
 		return parser.parse(
 			source,
-			"Test.java",
+			filename,
 			new ArrayList<File>(), // empty classpath
 			AST.JLS21,
 			null, // no compiler options

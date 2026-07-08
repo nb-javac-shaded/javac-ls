@@ -697,26 +697,26 @@ public class JavacDOMParser {
 					javacUnits.add((JCCompilationUnit) tree);
 				}
 
-				// If resolving bindings, analyze all files together
-				if (resolveBindings) {
-					// Retry analyze until it succeeds (pattern from eclipse.jdt.javac)
-					Throwable caught = null;
-					do {
-						caught = null;
-						try {
-							// Fully consume analyze iterator to ensure diagnostics are reported
-							var analyzeResults = task.analyze();
-							for (var element : analyzeResults) {
-								// Just consume the results
-							}
-						} catch (Throwable t) {
-							caught = t;
-							LOG.warn("Error while analyzing batch (will retry): {}", t.getMessage());
+				// Always analyze to collect diagnostics (even without binding resolution)
+				// Retry analyze until it succeeds (pattern from eclipse.jdt.javac)
+				Throwable caught = null;
+				do {
+					caught = null;
+					try {
+						// Fully consume analyze iterator to ensure diagnostics are reported
+						var analyzeResults = task.analyze();
+						for (var element : analyzeResults) {
+							// Just consume the results
 						}
-					} while (caught != null);
-					LOG.debug("Batch analysis complete");
+					} catch (Throwable t) {
+						caught = t;
+						LOG.warn("Error while analyzing batch (will retry): {}", t.getMessage());
+					}
+				} while (caught != null);
+				LOG.debug("Batch analysis complete");
 
-					// Create and attach JavacBindingResolver for ALL units
+				// If resolving bindings, create and attach JavacBindingResolver for ALL units
+				if (resolveBindings) {
 					try {
 						JavacBindingResolver resolver = new JavacBindingResolver(task, context, null, javacUnits);
 						resolver.isRecoveringBindings = true;
