@@ -8,6 +8,8 @@
  ******************************************************************************/
 package shaded.org.eclipse.jdt.core.dom;
 
+import java.util.Set;
+
 /**
  * Constants used by DOM classes, extracted from JDT compiler and core.
  */
@@ -94,7 +96,7 @@ public class DOMConstants {
 	 * All Java keywords including reserved words from all versions.
 	 */
 	private static final java.util.Set<String> JAVA_KEYWORDS = java.util.Set.of(
-		// Java 1.0 keywords
+		// Java 1.0 keywords (unconditional)
 		"abstract", "boolean", "break", "byte", "case", "catch", "char", "class",
 		"const", "continue", "default", "do", "double", "else", "extends", "final",
 		"finally", "float", "for", "goto", "if", "implements", "import", "instanceof",
@@ -102,14 +104,12 @@ public class DOMConstants {
 		"public", "return", "short", "static", "strictfp", "super", "switch",
 		"synchronized", "this", "throw", "throws", "transient", "try", "void",
 		"volatile", "while",
-		// Java 1.2 - assert (added as keyword in 1.4)
+		// Java 1.4 - assert (keyword)
 		"assert",
-		// Java 5 - enum
+		// Java 5 - enum (keyword)
 		"enum",
-		// Java 14 - new keywords
-		"yield", "record",
-		// Java 17 - sealed types
-		"sealed", "permits", "non-sealed",
+		// Java 14+ - contextual keywords (yield, record, sealed, permits)
+		"yield", "record", "sealed", "permits",
 		// Reserved literals (not keywords but also not valid identifiers)
 		"true", "false", "null",
 		// Java 9 - underscore alone is invalid
@@ -117,11 +117,40 @@ public class DOMConstants {
 	);
 
 	/**
+	 * Java 8 and earlier keywords (excluding contextual keywords introduced in Java 9+).
+	 * Used for identifier validation to allow contextual keywords like "record", "yield", etc.
+	 * as valid identifiers since they are only keywords in specific contexts.
+	 */
+	private static final java.util.Set<String> JAVA8_KEYWORDS = java.util.Set.of(
+		// Java 1.0 keywords (unconditional)
+		"abstract", "boolean", "break", "byte", "case", "catch", "char", "class",
+		"const", "continue", "default", "do", "double", "else", "extends", "final",
+		"finally", "float", "for", "goto", "if", "implements", "import", "instanceof",
+		"int", "interface", "long", "native", "new", "package", "private", "protected",
+		"public", "return", "short", "static", "strictfp", "super", "switch",
+		"synchronized", "this", "throw", "throws", "transient", "try", "void",
+		"volatile", "while",
+		// Java 1.4 - assert (keyword)
+		"assert",
+		// Java 5 - enum (keyword)
+		"enum",
+		// Reserved literals (not keywords but also not valid identifiers)
+		"true", "false", "null"
+	);
+
+	/**
 	 * Validates that a string is a valid Java identifier.
 	 * An identifier must start with a letter, $, or _, and continue with letters, digits, $, or _.
 	 * It must not be a keyword or reserved word.
+	 * Uses JAVA8_KEYWORDS to allow contextual keywords like "record", "yield" as identifiers.
 	 */
 	static boolean isValidJavaIdentifier(String s) {
+		return isValidJavaIdentifier(s, JAVA_KEYWORDS);
+	}
+	static boolean isValidJavaIdentifierFirstSupportedJDK(String s) {
+		return isValidJavaIdentifier(s, JAVA8_KEYWORDS);
+	}
+	static boolean isValidJavaIdentifier(String s, Set<String> keywords) {
 		if (s == null || s.isEmpty()) {
 			return false;
 		}
@@ -138,8 +167,8 @@ public class DOMConstants {
 			}
 		}
 
-		// Check it's not a keyword or reserved word
-		return !JAVA_KEYWORDS.contains(s);
+		// Check it's not a keyword or reserved word (using Java 8 keywords only)
+		return !keywords.contains(s);
 	}
 
 	// Scanner helper methods (from org.eclipse.jdt.internal.compiler.parser.ScannerHelper)

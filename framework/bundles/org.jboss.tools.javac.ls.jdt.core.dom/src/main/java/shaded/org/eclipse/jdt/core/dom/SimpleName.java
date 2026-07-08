@@ -222,7 +222,7 @@ public class SimpleName extends Name {
 		if (identifier == null) {
 			throw new IllegalArgumentException();
 		}
-		if (!DOMConstants.isValidJavaIdentifier(identifier)) {
+		if (!DOMConstants.isValidJavaIdentifierFirstSupportedJDK(identifier)) {
 			throw new IllegalArgumentException("Invalid identifier : >" + identifier + "<");  //$NON-NLS-1$//$NON-NLS-2$
 		}
 		preValueChange(IDENTIFIER_PROPERTY);
