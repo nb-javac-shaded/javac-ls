@@ -76,6 +76,7 @@ public class WorkspaceModel {
 	private final Set<String> projectsCurrentlyScanning;
 	private final List<WorkspaceModelListener> listeners;
 	private volatile int initializationState = InitializationState.STATE_NOT_STARTED;
+	private volatile boolean periodicScannerStarted = false;
 
 	// Batch tracking (in-memory only, rebuilt on startup)
 	private final Map<Path, Integer> fileToOriginalBatch = new ConcurrentHashMap<>();
@@ -110,8 +111,8 @@ public class WorkspaceModel {
 		setInitializationState(InitializationState.STATE_LOADING_CACHE);
 		loadIndex();
 
-		// Start periodic file change scanner (every 30 seconds)
-		startPeriodicFileChangeScanner();
+		// Periodic file change scanner will be started after indexing completes
+		// (see setInitializationState when transitioning to STATE_READY)
 
 		// Cache loaded - stay in LOADING_CACHE state
 		// Will transition to INDEXING when background indexing starts,
@@ -164,6 +165,12 @@ public class WorkspaceModel {
 		if (oldState != state) {
 			LOG.debug("Initialization state transition: {} -> {}", oldState, state);
 			this.initializationState = state;
+
+			// Start periodic file scanner after initial indexing completes
+			if (state == InitializationState.STATE_READY && oldState == InitializationState.STATE_INDEXING) {
+				startPeriodicFileChangeScanner();
+			}
+
 			notifyInitializationStateChanged(oldState, state);
 		}
 	}
@@ -1557,8 +1564,14 @@ public class WorkspaceModel {
 	/**
 	 * Start the periodic file change scanner.
 	 * Scans all projects every 30 seconds for file changes.
+	 * Idempotent - safe to call multiple times.
 	 */
-	private void startPeriodicFileChangeScanner() {
+	private synchronized void startPeriodicFileChangeScanner() {
+		if (periodicScannerStarted) {
+			LOG.debug("Periodic file scanner already started, skipping");
+			return;
+		}
+
 		periodicScanExecutor.scheduleWithFixedDelay(() -> {
 			try {
 				// Scan all projects for changed files
@@ -1570,6 +1583,7 @@ public class WorkspaceModel {
 			}
 		}, 30, 30, TimeUnit.SECONDS); // Initial delay 30s, then every 30s
 
+		periodicScannerStarted = true;
 		LOG.info("Started periodic file change scanner (every 30 seconds)");
 	}
 
@@ -1638,14 +1652,17 @@ public class WorkspaceModel {
 		}
 
 		long parseStart = System.currentTimeMillis();
-		// Parse all files in a single batch (shared Context, WITH binding resolution for diagnostics)
+		// Parse all files in a single batch (shared Context)
+		// NOTE: We pass resolveBindings=false for performance, but javac still runs
+		// full type-checking (task.analyze()), so we get all diagnostics anyway.
+		// The flag only controls whether we create JDT IBinding objects.
 		JavacDOMParser parser = new JavacDOMParser();
 		Map<String, CompilationUnit> units = parser.parseBatch(
 			sourceFiles,
 			classpath,
 			AST.JLS21,
 			null,  // compiler options
-			true  // WITH binding resolution to collect diagnostics
+			false  // NO binding resolution - diagnostics are still collected
 		);
 		long parseTime = System.currentTimeMillis() - parseStart;
 
