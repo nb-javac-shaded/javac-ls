@@ -63,8 +63,8 @@ public class JavaIndex {
 	private final Map<Integer, List<ReferenceEntry>> fileTypeReferences = new ConcurrentHashMap<>();
 	private final Map<Integer, List<ReferenceEntry>> fileNameReferences = new ConcurrentHashMap<>();
 
-	// Diagnostics (compilation errors and warnings per file, not persisted so still uses Path)
-	private final Map<Path, List<String>> fileDiagnostics = new ConcurrentHashMap<>();
+	// Diagnostics (compilation errors and warnings per file, using integer file IDs)
+	private final Map<Integer, List<String>> fileDiagnostics = new ConcurrentHashMap<>();
 
 	// File path registry (string interning for paths to reduce memory usage)
 	private final FilePathRegistry pathRegistry = new FilePathRegistry();
@@ -156,10 +156,11 @@ public class JavaIndex {
 	 * @param diagnosticStrings list of diagnostic strings (JSON or formatted text)
 	 */
 	public void storeDiagnostics(Path file, List<String> diagnosticStrings) {
+		int fileId = pathRegistry.getOrRegister(file);
 		if (diagnosticStrings == null || diagnosticStrings.isEmpty()) {
-			fileDiagnostics.remove(file);
+			fileDiagnostics.remove(fileId);
 		} else {
-			fileDiagnostics.put(file, new ArrayList<>(diagnosticStrings));
+			fileDiagnostics.put(fileId, new ArrayList<>(diagnosticStrings));
 		}
 	}
 
@@ -170,7 +171,11 @@ public class JavaIndex {
 	 * @return list of diagnostic strings, or empty list if none
 	 */
 	public List<String> getDiagnostics(Path file) {
-		List<String> diags = fileDiagnostics.get(file);
+		int fileId = pathRegistry.getId(file);
+		if (fileId == -1) {
+			return Collections.emptyList();
+		}
+		List<String> diags = fileDiagnostics.get(fileId);
 		return diags != null ? new ArrayList<>(diags) : Collections.emptyList();
 	}
 
@@ -180,7 +185,14 @@ public class JavaIndex {
 	 * @return set of file paths with diagnostics
 	 */
 	public Set<Path> getFilesWithDiagnostics() {
-		return new HashSet<>(fileDiagnostics.keySet());
+		Set<Path> paths = new HashSet<>();
+		for (int fileId : fileDiagnostics.keySet()) {
+			Path path = pathRegistry.getPath(fileId);
+			if (path != null) {
+				paths.add(path);
+			}
+		}
+		return paths;
 	}
 
 	/**
@@ -238,7 +250,7 @@ public class JavaIndex {
 		}
 
 		fileTimestamps.remove(fileId);
-		fileDiagnostics.remove(file);
+		fileDiagnostics.remove(fileId);
 		fireIndexChanged(new IndexChangeEvent(file, ChangeKind.FILE_REMOVED));
 	}
 
