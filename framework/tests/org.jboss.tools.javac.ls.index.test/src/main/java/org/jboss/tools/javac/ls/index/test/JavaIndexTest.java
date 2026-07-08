@@ -174,9 +174,9 @@ public class JavaIndexTest {
 		Location loc2 = new Location(testFile, 30, 40, 2, 10);
 
 		index.addTypeReference("com.example.MyClass",
-				new ReferenceEntry(loc1, ReferenceEntry.ReferenceKind.TYPE_REFERENCE));
+				new ReferenceEntry(loc1, ReferenceEntry.ReferenceKind.TYPE_REFERENCE), testFile);
 		index.addTypeReference("com.example.MyClass",
-				new ReferenceEntry(loc2, ReferenceEntry.ReferenceKind.CONSTRUCTOR_INVOCATION));
+				new ReferenceEntry(loc2, ReferenceEntry.ReferenceKind.CONSTRUCTOR_INVOCATION), testFile);
 
 		Collection<ReferenceEntry> usages = index.findTypeUsages("com.example.MyClass");
 		assertEquals("Should have 2 usages", 2, usages.size());
@@ -188,9 +188,9 @@ public class JavaIndexTest {
 		Location loc2 = new Location(testFile, 30, 40, 2, 10);
 
 		index.addNameReference("myVariable",
-				new ReferenceEntry(loc1, ReferenceEntry.ReferenceKind.NAME_REFERENCE));
+				new ReferenceEntry(loc1, ReferenceEntry.ReferenceKind.NAME_REFERENCE), testFile);
 		index.addNameReference("myVariable",
-				new ReferenceEntry(loc2, ReferenceEntry.ReferenceKind.NAME_REFERENCE));
+				new ReferenceEntry(loc2, ReferenceEntry.ReferenceKind.NAME_REFERENCE), testFile);
 
 		Collection<ReferenceEntry> usages = index.findNameUsages("myVariable");
 		assertEquals("Should have 2 usages", 2, usages.size());

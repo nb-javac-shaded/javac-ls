@@ -59,6 +59,10 @@ public class JavaIndex {
 	private final Map<Path, Set<String>> fileToDeclaredTypes = new ConcurrentHashMap<>();
 	private final Map<Path, Long> fileTimestamps = new ConcurrentHashMap<>();
 
+	// Track which references came from which file (for proper cleanup on re-index)
+	private final Map<Path, List<ReferenceEntry>> fileTypeReferences = new ConcurrentHashMap<>();
+	private final Map<Path, List<ReferenceEntry>> fileNameReferences = new ConcurrentHashMap<>();
+
 	// Diagnostics (compilation errors and warnings per file)
 	private final Map<Path, List<String>> fileDiagnostics = new ConcurrentHashMap<>();
 
@@ -100,18 +104,30 @@ public class JavaIndex {
 	/**
 	 * Add a type reference to the index.
 	 * Thread-safe for concurrent additions.
+	 *
+	 * @param qualifiedName the fully qualified type name being referenced
+	 * @param reference the reference details
+	 * @param sourceFile the file containing this reference
 	 */
-	public void addTypeReference(String qualifiedName, ReferenceEntry reference) {
+	public void addTypeReference(String qualifiedName, ReferenceEntry reference, Path sourceFile) {
 		typeReferences.computeIfAbsent(qualifiedName, k -> Collections.synchronizedList(new ArrayList<>()))
+				.add(reference);
+		fileTypeReferences.computeIfAbsent(sourceFile, k -> Collections.synchronizedList(new ArrayList<>()))
 				.add(reference);
 	}
 
 	/**
 	 * Add a name reference to the index (for find usages, rename refactoring).
 	 * Thread-safe for concurrent additions.
+	 *
+	 * @param name the simple name being referenced
+	 * @param reference the reference details
+	 * @param sourceFile the file containing this reference
 	 */
-	public void addNameReference(String name, ReferenceEntry reference) {
+	public void addNameReference(String name, ReferenceEntry reference, Path sourceFile) {
 		nameReferences.computeIfAbsent(name, k -> Collections.synchronizedList(new ArrayList<>()))
+				.add(reference);
+		fileNameReferences.computeIfAbsent(sourceFile, k -> Collections.synchronizedList(new ArrayList<>()))
 				.add(reference);
 	}
 
@@ -188,12 +204,32 @@ public class JavaIndex {
 				// Remove methods and fields of this type
 				methods.entrySet().removeIf(e -> e.getValue().getDeclaringType().equals(qname));
 				fields.entrySet().removeIf(e -> e.getValue().getDeclaringType().equals(qname));
-
-				// Remove type references (references FROM this file)
-				// Note: We're not tracking which file references come from, so we can't selectively remove them
-				// This is a limitation - references are global
 			}
 		}
+
+		// Remove type references FROM this file
+		List<ReferenceEntry> fileTypeRefs = fileTypeReferences.remove(file);
+		if (fileTypeRefs != null) {
+			for (ReferenceEntry ref : fileTypeRefs) {
+				// Remove this specific reference from the global type references map
+				// We need to find which type name this reference belongs to
+				for (List<ReferenceEntry> refs : typeReferences.values()) {
+					refs.remove(ref);
+				}
+			}
+		}
+
+		// Remove name references FROM this file
+		List<ReferenceEntry> fileNameRefs = fileNameReferences.remove(file);
+		if (fileNameRefs != null) {
+			for (ReferenceEntry ref : fileNameRefs) {
+				// Remove this specific reference from the global name references map
+				for (List<ReferenceEntry> refs : nameReferences.values()) {
+					refs.remove(ref);
+				}
+			}
+		}
+
 		fileTimestamps.remove(file);
 		fileDiagnostics.remove(file);
 		fireIndexChanged(new IndexChangeEvent(file, ChangeKind.FILE_REMOVED));
@@ -415,6 +451,8 @@ public class JavaIndex {
 		persistence.saveFields(new HashMap<>(fields));
 		persistence.saveFileToDeclaredTypes(new HashMap<>(fileToDeclaredTypes));
 		persistence.saveFileTimestamps(new HashMap<>(fileTimestamps));
+		persistence.saveFileTypeReferences(convertPathListHashMap(fileTypeReferences));
+		persistence.saveFileNameReferences(convertPathListHashMap(fileNameReferences));
 	}
 
 	/**
@@ -430,6 +468,8 @@ public class JavaIndex {
 		fields.clear();
 		fileToDeclaredTypes.clear();
 		fileTimestamps.clear();
+		fileTypeReferences.clear();
+		fileNameReferences.clear();
 
 		Map<String, TypeDeclarationEntry> loadedTypes = persistence.loadTypes();
 		if (loadedTypes != null) {
@@ -482,6 +522,16 @@ public class JavaIndex {
 			fileTimestamps.putAll(loadedFileTimestamps);
 		}
 
+		Map<Path, List<ReferenceEntry>> loadedFileTypeRefs = persistence.loadFileTypeReferences();
+		if (loadedFileTypeRefs != null) {
+			fileTypeReferences.putAll(loadedFileTypeRefs);
+		}
+
+		Map<Path, List<ReferenceEntry>> loadedFileNameRefs = persistence.loadFileNameReferences();
+		if (loadedFileNameRefs != null) {
+			fileNameReferences.putAll(loadedFileNameRefs);
+		}
+
 		LOG.info("Loaded index: {} types, {} methods, {} fields",
 				types.size(), methods.size(), fields.size());
 	}
@@ -497,6 +547,14 @@ public class JavaIndex {
 	private Map<String, List<ReferenceEntry>> convertToListHashMap(Map<String, List<ReferenceEntry>> source) {
 		Map<String, List<ReferenceEntry>> result = new HashMap<>();
 		for (Map.Entry<String, List<ReferenceEntry>> entry : source.entrySet()) {
+			result.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+		}
+		return result;
+	}
+
+	private Map<Path, List<ReferenceEntry>> convertPathListHashMap(Map<Path, List<ReferenceEntry>> source) {
+		Map<Path, List<ReferenceEntry>> result = new HashMap<>();
+		for (Map.Entry<Path, List<ReferenceEntry>> entry : source.entrySet()) {
 			result.put(entry.getKey(), new ArrayList<>(entry.getValue()));
 		}
 		return result;

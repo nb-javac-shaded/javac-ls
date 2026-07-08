@@ -170,7 +170,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 				if (superName != null) {
 					index.addTypeReference(superName,
 							new ReferenceEntry(createLocation(type.getSuperclassType()),
-									ReferenceKind.CONSTRUCTOR_INVOCATION));
+									ReferenceKind.CONSTRUCTOR_INVOCATION), file);
 				}
 			}
 		}
@@ -358,7 +358,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 
 				// Also add as a name reference so search can find files declaring this field
 				ReferenceEntry nameRef = new ReferenceEntry(entry.getLocation(), ReferenceKind.NAME_REFERENCE);
-				index.addNameReference(fragment.getName().getIdentifier(), nameRef);
+				index.addNameReference(fragment.getName().getIdentifier(), nameRef, file);
 			}
 		}
 		return true;
@@ -383,7 +383,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 
 		// Add constructor reference for enum constant instantiation
 		index.addTypeReference(typeName,
-				new ReferenceEntry(createLocation(enumConstant), ReferenceKind.CONSTRUCTOR_INVOCATION));
+				new ReferenceEntry(createLocation(enumConstant), ReferenceKind.CONSTRUCTOR_INVOCATION), file);
 
 		return true;
 	}
@@ -395,7 +395,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(type);
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(type), ReferenceKind.TYPE_REFERENCE));
+					new ReferenceEntry(createLocation(type), ReferenceKind.TYPE_REFERENCE), file);
 		}
 		return true;
 	}
@@ -405,7 +405,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(type);
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(type), ReferenceKind.TYPE_REFERENCE));
+					new ReferenceEntry(createLocation(type), ReferenceKind.TYPE_REFERENCE), file);
 		}
 		return true;
 	}
@@ -421,7 +421,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 				importMap.put(simpleName, qualifiedName);
 			}
 			index.addTypeReference(qualifiedName,
-					new ReferenceEntry(createLocation(importDecl), ReferenceKind.TYPE_REFERENCE));
+					new ReferenceEntry(createLocation(importDecl), ReferenceKind.TYPE_REFERENCE), file);
 		}
 		return true;
 	}
@@ -438,7 +438,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(creation.getType());
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(creation), ReferenceKind.CONSTRUCTOR_INVOCATION));
+					new ReferenceEntry(createLocation(creation), ReferenceKind.CONSTRUCTOR_INVOCATION), file);
 		}
 		return true;
 	}
@@ -448,7 +448,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(annotation.getTypeName());
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(annotation), ReferenceKind.ANNOTATION_USE));
+					new ReferenceEntry(createLocation(annotation), ReferenceKind.ANNOTATION_USE), file);
 		}
 		return true;
 	}
@@ -458,7 +458,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(annotation.getTypeName());
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(annotation), ReferenceKind.ANNOTATION_USE));
+					new ReferenceEntry(createLocation(annotation), ReferenceKind.ANNOTATION_USE), file);
 		}
 		return true;
 	}
@@ -468,7 +468,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(annotation.getTypeName());
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(annotation), ReferenceKind.ANNOTATION_USE));
+					new ReferenceEntry(createLocation(annotation), ReferenceKind.ANNOTATION_USE), file);
 		}
 		return true;
 	}
@@ -487,7 +487,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 				String superName = resolveTypeName(typeDecl.getSuperclassType());
 				if (superName != null) {
 					index.addTypeReference(superName,
-							new ReferenceEntry(createLocation(node), ReferenceKind.CONSTRUCTOR_INVOCATION));
+							new ReferenceEntry(createLocation(node), ReferenceKind.CONSTRUCTOR_INVOCATION), file);
 				}
 			}
 		}
@@ -498,7 +498,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 	public boolean visit(shaded.org.eclipse.jdt.core.dom.SuperMethodInvocation node) {
 		// Track super method invocations
 		index.addTypeReference("super",
-				new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_INVOCATION));
+				new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_INVOCATION), file);
 		return true;
 	}
 
@@ -506,7 +506,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 	public boolean visit(shaded.org.eclipse.jdt.core.dom.ExpressionMethodReference node) {
 		// Method reference like obj::method
 		index.addTypeReference(node.toString(),
-				new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_REFERENCE));
+				new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_REFERENCE), file);
 		return true;
 	}
 
@@ -516,7 +516,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(node.getType());
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_REFERENCE));
+					new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_REFERENCE), file);
 		}
 		return true;
 	}
@@ -525,7 +525,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 	public boolean visit(shaded.org.eclipse.jdt.core.dom.SuperMethodReference node) {
 		// Method reference like super::method
 		index.addTypeReference("super",
-				new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_REFERENCE));
+				new ReferenceEntry(createLocation(node), ReferenceKind.METHOD_REFERENCE), file);
 		return true;
 	}
 
@@ -535,7 +535,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		String typeName = resolveTypeName(node.getType());
 		if (typeName != null) {
 			index.addTypeReference(typeName,
-					new ReferenceEntry(createLocation(node), ReferenceKind.CONSTRUCTOR_INVOCATION));
+					new ReferenceEntry(createLocation(node), ReferenceKind.CONSTRUCTOR_INVOCATION), file);
 		}
 		return true;
 	}
@@ -577,7 +577,7 @@ public class DOMToIndexVisitor extends ASTVisitor {
 		// Index all simple name references for find usages, rename refactoring, etc.
 		// This is essential for tracking field access, variable usage, etc.
 		String identifier = name.getIdentifier();
-		index.addNameReference(identifier, new ReferenceEntry(createLocation(name), ReferenceKind.NAME_REFERENCE));
+		index.addNameReference(identifier, new ReferenceEntry(createLocation(name), ReferenceKind.NAME_REFERENCE), file);
 		return true;
 	}
 

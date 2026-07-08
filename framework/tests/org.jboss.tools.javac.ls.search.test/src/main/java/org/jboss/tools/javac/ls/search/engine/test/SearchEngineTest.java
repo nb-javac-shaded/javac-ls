@@ -48,7 +48,7 @@ public class SearchEngineTest {
         index.addTypeReference("MyClass", new ReferenceEntry(
             new Location(file2, 30, 37, 1, 30),
             ReferenceKind.TYPE_REFERENCE
-        ));
+        ), file2);
     }
 
     @Test

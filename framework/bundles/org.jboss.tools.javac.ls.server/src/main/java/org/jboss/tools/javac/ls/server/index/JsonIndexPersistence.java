@@ -64,6 +64,8 @@ public class JsonIndexPersistence implements IndexPersistence {
 	private static final String FIELDS_FILE = "fields.json";
 	private static final String FILE_TO_TYPES_FILE = "file_to_types.json";
 	private static final String FILE_TIMESTAMPS_FILE = "file_timestamps.json";
+	private static final String FILE_TYPE_REFERENCES_FILE = "file_type_references.json";
+	private static final String FILE_NAME_REFERENCES_FILE = "file_name_references.json";
 
 	public JsonIndexPersistence(Path baseDirectory) {
 		this.baseDirectory = baseDirectory;
@@ -490,6 +492,84 @@ public class JsonIndexPersistence implements IndexPersistence {
 		}
 	}
 
+	@Override
+	public void saveFileTypeReferences(Map<Path, List<ReferenceEntry>> fileTypeReferences) throws IOException {
+		ensureDirectoryExists();
+		Path file = baseDirectory.resolve(FILE_TYPE_REFERENCES_FILE);
+
+		// Convert Path keys to String for JSON serialization
+		Map<String, List<ReferenceEntry>> stringMap = new HashMap<>();
+		for (Map.Entry<Path, List<ReferenceEntry>> entry : fileTypeReferences.entrySet()) {
+			stringMap.put(entry.getKey().toString(), entry.getValue());
+		}
+
+		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+			gson.toJson(stringMap, writer);
+		}
+	}
+
+	@Override
+	public Map<Path, List<ReferenceEntry>> loadFileTypeReferences() throws IOException {
+		Path file = baseDirectory.resolve(FILE_TYPE_REFERENCES_FILE);
+		if (!Files.exists(file)) {
+			return new HashMap<>();
+		}
+
+		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
+			Map<String, List<ReferenceEntry>> stringMap = gson.fromJson(reader, type);
+
+			// Convert String keys back to Path
+			Map<Path, List<ReferenceEntry>> result = new HashMap<>();
+			if (stringMap != null) {
+				for (Map.Entry<String, List<ReferenceEntry>> entry : stringMap.entrySet()) {
+					result.put(Paths.get(entry.getKey()), new ArrayList<>(entry.getValue()));
+				}
+			}
+			return result;
+		}
+	}
+
+	@Override
+	public void saveFileNameReferences(Map<Path, List<ReferenceEntry>> fileNameReferences) throws IOException {
+		ensureDirectoryExists();
+		Path file = baseDirectory.resolve(FILE_NAME_REFERENCES_FILE);
+
+		// Convert Path keys to String for JSON serialization
+		Map<String, List<ReferenceEntry>> stringMap = new HashMap<>();
+		for (Map.Entry<Path, List<ReferenceEntry>> entry : fileNameReferences.entrySet()) {
+			stringMap.put(entry.getKey().toString(), entry.getValue());
+		}
+
+		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+			// Use nameRefGson which omits the redundant "kind" field (all NAME_REFERENCE)
+			nameRefGson.toJson(stringMap, writer);
+		}
+	}
+
+	@Override
+	public Map<Path, List<ReferenceEntry>> loadFileNameReferences() throws IOException {
+		Path file = baseDirectory.resolve(FILE_NAME_REFERENCES_FILE);
+		if (!Files.exists(file)) {
+			return new HashMap<>();
+		}
+
+		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
+			// Use nameRefGson which automatically adds NAME_REFERENCE kind
+			Map<String, List<ReferenceEntry>> stringMap = nameRefGson.fromJson(reader, type);
+
+			// Convert String keys back to Path
+			Map<Path, List<ReferenceEntry>> result = new HashMap<>();
+			if (stringMap != null) {
+				for (Map.Entry<String, List<ReferenceEntry>> entry : stringMap.entrySet()) {
+					result.put(Paths.get(entry.getKey()), new ArrayList<>(entry.getValue()));
+				}
+			}
+			return result;
+		}
+	}
+
 	private void ensureDirectoryExists() throws IOException {
 		if (!Files.exists(baseDirectory)) {
 			Files.createDirectories(baseDirectory);
@@ -510,6 +590,8 @@ public class JsonIndexPersistence implements IndexPersistence {
 			Files.deleteIfExists(baseDirectory.resolve(FIELDS_FILE));
 			Files.deleteIfExists(baseDirectory.resolve(FILE_TO_TYPES_FILE));
 			Files.deleteIfExists(baseDirectory.resolve(FILE_TIMESTAMPS_FILE));
+			Files.deleteIfExists(baseDirectory.resolve(FILE_TYPE_REFERENCES_FILE));
+			Files.deleteIfExists(baseDirectory.resolve(FILE_NAME_REFERENCES_FILE));
 		}
 	}
 }
