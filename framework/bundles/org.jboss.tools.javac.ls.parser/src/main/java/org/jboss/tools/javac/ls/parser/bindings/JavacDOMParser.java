@@ -761,28 +761,34 @@ public class JavacDOMParser {
 						continue;
 					}
 
-					// Convert javac tree to DOM
-					boolean docEnabled = JavaCoreConstants.ENABLED.equals(compilerOptions.get(JavaCoreConstants.COMPILER_DOC_COMMENT_SUPPORT));
-					JavacConverter converter = new JavacConverter(ast, javacUnit, context, sourceContent, docEnabled, -1);
-					converter.populateCompilationUnit(result, javacUnit);
+					try {
+						// Convert javac tree to DOM
+						boolean docEnabled = JavaCoreConstants.ENABLED.equals(compilerOptions.get(JavaCoreConstants.COMPILER_DOC_COMMENT_SUPPORT));
+						JavacConverter converter = new JavacConverter(ast, javacUnit, context, sourceContent, docEnabled, -1);
+						converter.populateCompilationUnit(result, javacUnit);
 
-					// Analyze parse quality
-					JCTreeErrorCounter errorCounter = JCTreeErrorCounter.analyze(javacUnit);
-					totalErrors += errorCounter.getTotalErrorCount();
-					totalNodes += errorCounter.getTotalNodeCount();
-					if (errorCounter.getTotalErrorCount() > 0) {
-						filesWithErrors++;
-						LOG.debug("Parse quality for {}: {}", matchingKey, errorCounter);
+						// Analyze parse quality
+						JCTreeErrorCounter errorCounter = JCTreeErrorCounter.analyze(javacUnit);
+						totalErrors += errorCounter.getTotalErrorCount();
+						totalNodes += errorCounter.getTotalNodeCount();
+						if (errorCounter.getTotalErrorCount() > 0) {
+							filesWithErrors++;
+							LOG.debug("Parse quality for {}: {}", matchingKey, errorCounter);
+						}
+
+						// Handle comments
+						List<Comment> comments = new ArrayList<>();
+						comments.addAll(converter.notAttachedComments);
+						Scanner javacScanner = scanForComments(comments, result, context, sourceContent, converter);
+						addCommentsToUnit(comments, result);
+
+						LOG.debug("Converted file to DOM: {} ({} problems)",
+							matchingKey, result.getProblems() != null ? result.getProblems().length : 0);
+					} catch (Exception e) {
+						// DOM conversion failed for this file - skip it and continue with the rest
+						LOG.error("Failed to convert file to DOM during batch processing: {}", matchingKey, e);
+						results.remove(matchingKey); // Remove partial/failed result from batch
 					}
-
-					// Handle comments
-					List<Comment> comments = new ArrayList<>();
-					comments.addAll(converter.notAttachedComments);
-					Scanner javacScanner = scanForComments(comments, result, context, sourceContent, converter);
-					addCommentsToUnit(comments, result);
-
-					LOG.debug("Converted file to DOM: {} ({} problems)",
-						matchingKey, result.getProblems() != null ? result.getProblems().length : 0);
 				}
 
 			} catch (IOException ex) {
