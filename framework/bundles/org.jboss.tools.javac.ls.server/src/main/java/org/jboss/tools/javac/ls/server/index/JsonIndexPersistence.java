@@ -72,12 +72,14 @@ public class JsonIndexPersistence implements IndexPersistence {
 		this.baseDirectory = baseDirectory;
 
 		this.gson = new GsonBuilder()
+				.excludeFieldsWithModifiers(java.lang.reflect.Modifier.TRANSIENT)
 				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
 				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
 				.create();
 
 		// Separate Gson for name references that omits the redundant "kind" field
 		this.nameRefGson = new GsonBuilder()
+				.excludeFieldsWithModifiers(java.lang.reflect.Modifier.TRANSIENT)
 				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
 				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
 				.registerTypeAdapter(ReferenceEntry.class, new NameReferenceEntryAdapter())
@@ -85,6 +87,7 @@ public class JsonIndexPersistence implements IndexPersistence {
 
 		// Separate Gson for type references that omits the redundant "kind" field
 		this.typeRefGson = new GsonBuilder()
+				.excludeFieldsWithModifiers(java.lang.reflect.Modifier.TRANSIENT)
 				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
 				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
 				.registerTypeAdapter(ReferenceEntry.class, new TypeReferenceEntryAdapter())
@@ -92,6 +95,7 @@ public class JsonIndexPersistence implements IndexPersistence {
 
 		// Separate Gson for annotation references that omits the redundant "kind" field
 		this.annotationRefGson = new GsonBuilder()
+				.excludeFieldsWithModifiers(java.lang.reflect.Modifier.TRANSIENT)
 				.registerTypeHierarchyAdapter(Path.class, new PathSerializer())
 				.registerTypeHierarchyAdapter(Path.class, new PathDeserializer())
 				.registerTypeAdapter(ReferenceEntry.class, new AnnotationReferenceEntryAdapter())
@@ -401,40 +405,26 @@ public class JsonIndexPersistence implements IndexPersistence {
 	}
 
 	@Override
-	public void saveFileToDeclaredTypes(Map<Path, Set<String>> fileToDeclaredTypes) throws IOException {
+	public void saveFileToDeclaredTypes(Map<Integer, Set<String>> fileToDeclaredTypes) throws IOException {
 		ensureDirectoryExists();
 		Path file = baseDirectory.resolve(FILE_TO_TYPES_FILE);
 
-		// Convert Path keys to String for JSON serialization
-		Map<String, Set<String>> stringMap = new HashMap<>();
-		for (Map.Entry<Path, Set<String>> entry : fileToDeclaredTypes.entrySet()) {
-			stringMap.put(entry.getKey().toString(), entry.getValue());
-		}
-
 		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-			gson.toJson(stringMap, writer);
+			gson.toJson(fileToDeclaredTypes, writer);
 		}
 	}
 
 	@Override
-	public Map<Path, Set<String>> loadFileToDeclaredTypes() throws IOException {
+	public Map<Integer, Set<String>> loadFileToDeclaredTypes() throws IOException {
 		Path file = baseDirectory.resolve(FILE_TO_TYPES_FILE);
 		if (!Files.exists(file)) {
 			return new HashMap<>();
 		}
 
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			Type type = new TypeToken<Map<String, Set<String>>>(){}.getType();
-			Map<String, Set<String>> stringMap = gson.fromJson(reader, type);
-
-			// Convert String keys back to Path
-			Map<Path, Set<String>> result = new HashMap<>();
-			if (stringMap != null) {
-				for (Map.Entry<String, Set<String>> entry : stringMap.entrySet()) {
-					result.put(Paths.get(entry.getKey()), new HashSet<>(entry.getValue()));
-				}
-			}
-			return result;
+			Type type = new TypeToken<Map<Integer, Set<String>>>(){}.getType();
+			Map<Integer, Set<String>> result = gson.fromJson(reader, type);
+			return result != null ? result : new HashMap<>();
 		}
 	}
 
@@ -457,118 +447,76 @@ public class JsonIndexPersistence implements IndexPersistence {
 	}
 
 	@Override
-	public void saveFileTimestamps(Map<Path, Long> fileTimestamps) throws IOException {
+	public void saveFileTimestamps(Map<Integer, Long> fileTimestamps) throws IOException {
 		ensureDirectoryExists();
 		Path file = baseDirectory.resolve(FILE_TIMESTAMPS_FILE);
 
-		// Convert Path keys to String for JSON serialization
-		Map<String, Long> stringMap = new HashMap<>();
-		for (Map.Entry<Path, Long> entry : fileTimestamps.entrySet()) {
-			stringMap.put(entry.getKey().toString(), entry.getValue());
-		}
-
 		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-			gson.toJson(stringMap, writer);
+			gson.toJson(fileTimestamps, writer);
 		}
 	}
 
 	@Override
-	public Map<Path, Long> loadFileTimestamps() throws IOException {
+	public Map<Integer, Long> loadFileTimestamps() throws IOException {
 		Path file = baseDirectory.resolve(FILE_TIMESTAMPS_FILE);
 		if (!Files.exists(file)) {
 			return new HashMap<>();
 		}
 
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			Type type = new TypeToken<Map<String, Long>>(){}.getType();
-			Map<String, Long> stringMap = gson.fromJson(reader, type);
-
-			// Convert String keys back to Path
-			Map<Path, Long> result = new HashMap<>();
-			if (stringMap != null) {
-				for (Map.Entry<String, Long> entry : stringMap.entrySet()) {
-					result.put(Paths.get(entry.getKey()), entry.getValue());
-				}
-			}
-			return result;
+			Type type = new TypeToken<Map<Integer, Long>>(){}.getType();
+			Map<Integer, Long> result = gson.fromJson(reader, type);
+			return result != null ? result : new HashMap<>();
 		}
 	}
 
 	@Override
-	public void saveFileTypeReferences(Map<Path, List<ReferenceEntry>> fileTypeReferences) throws IOException {
+	public void saveFileTypeReferences(Map<Integer, List<ReferenceEntry>> fileTypeReferences) throws IOException {
 		ensureDirectoryExists();
 		Path file = baseDirectory.resolve(FILE_TYPE_REFERENCES_FILE);
 
-		// Convert Path keys to String for JSON serialization
-		Map<String, List<ReferenceEntry>> stringMap = new HashMap<>();
-		for (Map.Entry<Path, List<ReferenceEntry>> entry : fileTypeReferences.entrySet()) {
-			stringMap.put(entry.getKey().toString(), entry.getValue());
-		}
-
 		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-			gson.toJson(stringMap, writer);
+			gson.toJson(fileTypeReferences, writer);
 		}
 	}
 
 	@Override
-	public Map<Path, List<ReferenceEntry>> loadFileTypeReferences() throws IOException {
+	public Map<Integer, List<ReferenceEntry>> loadFileTypeReferences() throws IOException {
 		Path file = baseDirectory.resolve(FILE_TYPE_REFERENCES_FILE);
 		if (!Files.exists(file)) {
 			return new HashMap<>();
 		}
 
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
-			Map<String, List<ReferenceEntry>> stringMap = gson.fromJson(reader, type);
-
-			// Convert String keys back to Path
-			Map<Path, List<ReferenceEntry>> result = new HashMap<>();
-			if (stringMap != null) {
-				for (Map.Entry<String, List<ReferenceEntry>> entry : stringMap.entrySet()) {
-					result.put(Paths.get(entry.getKey()), new ArrayList<>(entry.getValue()));
-				}
-			}
-			return result;
+			Type type = new TypeToken<Map<Integer, List<ReferenceEntry>>>(){}.getType();
+			Map<Integer, List<ReferenceEntry>> result = gson.fromJson(reader, type);
+			return result != null ? result : new HashMap<>();
 		}
 	}
 
 	@Override
-	public void saveFileNameReferences(Map<Path, List<ReferenceEntry>> fileNameReferences) throws IOException {
+	public void saveFileNameReferences(Map<Integer, List<ReferenceEntry>> fileNameReferences) throws IOException {
 		ensureDirectoryExists();
 		Path file = baseDirectory.resolve(FILE_NAME_REFERENCES_FILE);
-
-		// Convert Path keys to String for JSON serialization
-		Map<String, List<ReferenceEntry>> stringMap = new HashMap<>();
-		for (Map.Entry<Path, List<ReferenceEntry>> entry : fileNameReferences.entrySet()) {
-			stringMap.put(entry.getKey().toString(), entry.getValue());
-		}
 
 		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
 			// Use nameRefGson which omits the redundant "kind" field (all NAME_REFERENCE)
-			nameRefGson.toJson(stringMap, writer);
+			nameRefGson.toJson(fileNameReferences, writer);
 		}
 	}
 
 	@Override
-	public Map<Path, List<ReferenceEntry>> loadFileNameReferences() throws IOException {
+	public Map<Integer, List<ReferenceEntry>> loadFileNameReferences() throws IOException {
 		Path file = baseDirectory.resolve(FILE_NAME_REFERENCES_FILE);
 		if (!Files.exists(file)) {
 			return new HashMap<>();
 		}
 
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			Type type = new TypeToken<Map<String, List<ReferenceEntry>>>(){}.getType();
+			Type type = new TypeToken<Map<Integer, List<ReferenceEntry>>>(){}.getType();
 			// Use nameRefGson which automatically adds NAME_REFERENCE kind
-			Map<String, List<ReferenceEntry>> stringMap = nameRefGson.fromJson(reader, type);
-
-			// Convert String keys back to Path
-			Map<Path, List<ReferenceEntry>> result = new HashMap<>();
-			if (stringMap != null) {
-				for (Map.Entry<String, List<ReferenceEntry>> entry : stringMap.entrySet()) {
-					result.put(Paths.get(entry.getKey()), new ArrayList<>(entry.getValue()));
-				}
-			}
-			return result;
+			Map<Integer, List<ReferenceEntry>> result = nameRefGson.fromJson(reader, type);
+			return result != null ? result : new HashMap<>();
 		}
 	}
 

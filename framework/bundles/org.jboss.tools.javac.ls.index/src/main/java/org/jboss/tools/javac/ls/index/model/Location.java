@@ -25,6 +25,7 @@ import org.jboss.tools.javac.ls.index.store.JavaIndex;
  */
 public class Location {
 	private final int fileId;
+	private transient FilePathRegistry pathRegistry;
 	private final int startOffset;
 	private final int endOffset;
 	private final int line;
@@ -41,7 +42,8 @@ public class Location {
 	 * @param index the JavaIndex (used for file path interning)
 	 */
 	public Location(Path file, int startOffset, int endOffset, int line, int column, JavaIndex index) {
-		this.fileId = index.getPathRegistry().getOrRegister(file);
+		this.pathRegistry = index.getPathRegistry();
+		this.fileId = pathRegistry.getOrRegister(file);
 		this.startOffset = startOffset;
 		this.endOffset = endOffset;
 		this.line = line;
@@ -53,10 +55,18 @@ public class Location {
 	 */
 	public Location(int fileId, int startOffset, int endOffset, int line, int column) {
 		this.fileId = fileId;
+		this.pathRegistry = null; // Will be set during index load
 		this.startOffset = startOffset;
 		this.endOffset = endOffset;
 		this.line = line;
 		this.column = column;
+	}
+
+	/**
+	 * Rehydrate this location with a path registry after deserialization.
+	 */
+	public void setPathRegistry(FilePathRegistry registry) {
+		this.pathRegistry = registry;
 	}
 
 	/**
@@ -68,11 +78,9 @@ public class Location {
 
 	/**
 	 * Get the source file path.
-	 *
-	 * @param registry the file path registry to resolve the file ID
 	 */
-	public Path getFile(FilePathRegistry registry) {
-		return registry.getPath(fileId);
+	public Path getFile() {
+		return pathRegistry.getPath(fileId);
 	}
 
 	public int getStartOffset() {

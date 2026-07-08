@@ -130,14 +130,14 @@ public interface IndexPersistence {
 	 * @param fileToDeclaredTypes map of file path to set of declared type qualified names
 	 * @throws IOException if save fails
 	 */
-	void saveFileToDeclaredTypes(Map<Path, Set<String>> fileToDeclaredTypes) throws IOException;
+	void saveFileToDeclaredTypes(Map<Integer, Set<String>> fileToDeclaredTypes) throws IOException;
 
 	/**
 	 * Load file-to-types mapping.
 	 * @return map of file path to set of declared type qualified names
 	 * @throws IOException if load fails
 	 */
-	Map<Path, Set<String>> loadFileToDeclaredTypes() throws IOException;
+	Map<Integer, Set<String>> loadFileToDeclaredTypes() throws IOException;
 
 	/**
 	 * Check if persisted data exists and is valid.
@@ -156,42 +156,42 @@ public interface IndexPersistence {
 	 * @param fileTimestamps map of file path to last modification timestamp
 	 * @throws IOException if save fails
 	 */
-	void saveFileTimestamps(Map<Path, Long> fileTimestamps) throws IOException;
+	void saveFileTimestamps(Map<Integer, Long> fileTimestamps) throws IOException;
 
 	/**
 	 * Load file timestamps.
 	 * @return map of file path to last modification timestamp
 	 * @throws IOException if load fails
 	 */
-	Map<Path, Long> loadFileTimestamps() throws IOException;
+	Map<Integer, Long> loadFileTimestamps() throws IOException;
 
 	/**
 	 * Save file-to-type-references mapping for proper cleanup on re-index.
 	 * @param fileTypeReferences map of file path to list of type references from that file
 	 * @throws IOException if save fails
 	 */
-	void saveFileTypeReferences(Map<Path, List<ReferenceEntry>> fileTypeReferences) throws IOException;
+	void saveFileTypeReferences(Map<Integer, List<ReferenceEntry>> fileTypeReferences) throws IOException;
 
 	/**
 	 * Load file-to-type-references mapping.
 	 * @return map of file path to list of type references from that file
 	 * @throws IOException if load fails
 	 */
-	Map<Path, List<ReferenceEntry>> loadFileTypeReferences() throws IOException;
+	Map<Integer, List<ReferenceEntry>> loadFileTypeReferences() throws IOException;
 
 	/**
 	 * Save file-to-name-references mapping for proper cleanup on re-index.
 	 * @param fileNameReferences map of file path to list of name references from that file
 	 * @throws IOException if save fails
 	 */
-	void saveFileNameReferences(Map<Path, List<ReferenceEntry>> fileNameReferences) throws IOException;
+	void saveFileNameReferences(Map<Integer, List<ReferenceEntry>> fileNameReferences) throws IOException;
 
 	/**
 	 * Load file-to-name-references mapping.
 	 * @return map of file path to list of name references from that file
 	 * @throws IOException if load fails
 	 */
-	Map<Path, List<ReferenceEntry>> loadFileNameReferences() throws IOException;
+	Map<Integer, List<ReferenceEntry>> loadFileNameReferences() throws IOException;
 
 	/**
 	 * Save file path registry (maps fileId to Path).

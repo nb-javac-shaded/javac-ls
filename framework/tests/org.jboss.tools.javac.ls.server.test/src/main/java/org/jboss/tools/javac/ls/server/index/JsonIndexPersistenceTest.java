@@ -246,28 +246,28 @@ public class JsonIndexPersistenceTest {
 
 	@Test
 	public void testSaveAndLoadFileToDeclaredTypes() throws IOException {
-		Map<Path, Set<String>> fileToDeclaredTypes = new HashMap<>();
+		Map<Integer, Set<String>> fileToDeclaredTypes = new HashMap<>();
 
-		Path file1 = Paths.get("/project/src/Example.java");
+		int fileId1 = 1;
 		Set<String> types1 = new HashSet<>(Arrays.asList("com.example.Example", "com.example.Example$Inner"));
-		fileToDeclaredTypes.put(file1, types1);
+		fileToDeclaredTypes.put(fileId1, types1);
 
-		Path file2 = Paths.get("/project/src/Other.java");
+		int fileId2 = 2;
 		Set<String> types2 = new HashSet<>(Arrays.asList("com.example.Other"));
-		fileToDeclaredTypes.put(file2, types2);
+		fileToDeclaredTypes.put(fileId2, types2);
 
 		persistence.saveFileToDeclaredTypes(fileToDeclaredTypes);
 
-		Map<Path, Set<String>> loaded = persistence.loadFileToDeclaredTypes();
+		Map<Integer, Set<String>> loaded = persistence.loadFileToDeclaredTypes();
 		assertEquals("Should have 2 entries", 2, loaded.size());
 
-		Set<String> loadedTypes1 = loaded.get(file1);
+		Set<String> loadedTypes1 = loaded.get(fileId1);
 		assertNotNull("Should have types for file1", loadedTypes1);
 		assertEquals("Should have 2 types", 2, loadedTypes1.size());
 		assertTrue("Should contain Example", loadedTypes1.contains("com.example.Example"));
 		assertTrue("Should contain Inner", loadedTypes1.contains("com.example.Example$Inner"));
 
-		Set<String> loadedTypes2 = loaded.get(file2);
+		Set<String> loadedTypes2 = loaded.get(fileId2);
 		assertNotNull("Should have types for file2", loadedTypes2);
 		assertEquals("Should have 1 type", 1, loadedTypes2.size());
 		assertTrue("Should contain Other", loadedTypes2.contains("com.example.Other"));
