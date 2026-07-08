@@ -22,8 +22,63 @@ import org.jboss.tools.javac.ls.index.model.ReferenceEntry;
 import org.jboss.tools.javac.ls.index.model.TypeDeclarationEntry;
 
 /**
- * Abstraction for saving/loading index data.
- * Implementations decide format (JSON, binary, etc.) and location.
+ * Abstraction for saving/loading JavaIndex data to/from persistent storage.
+ *
+ * <h2>Purpose</h2>
+ * The JavaIndex is an in-memory data structure. To avoid re-indexing the entire
+ * workspace on every startup (which can take minutes for large codebases), we
+ * persist the index to disk. This interface abstracts the persistence mechanism,
+ * allowing different implementations (JSON files, binary format, database, etc.).
+ *
+ * <h2>Data Structure Persistence</h2>
+ * Each major data structure in JavaIndex is saved/loaded separately:
+ *
+ * 1. Declarations:
+ *    - types: "com.example.MyClass" → TypeDeclarationEntry
+ *    - methods: "com.example.MyClass.method(String)" → MethodDeclarationEntry
+ *    - fields: "com.example.MyClass.field" → FieldDeclarationEntry
+ *
+ * 2. Type Hierarchy:
+ *    - subtypes: "java.lang.Object" → {"com.example.MyClass", ...}
+ *    - implementors: "java.io.Serializable" → {"com.example.MyClass", ...}
+ *
+ * 3. References:
+ *    - typeReferences: "com.example.MyClass" → [ReferenceEntry list]
+ *    - nameReferences: "myVariable" → [ReferenceEntry list]
+ *
+ * 4. File Tracking (uses Integer file IDs, not Path):
+ *    - fileToDeclaredTypes: fileId → {"com.example.MyClass", ...}
+ *    - fileTimestamps: fileId → lastModified timestamp
+ *    - fileTypeReferences: fileId → [ReferenceEntry list]
+ *    - fileNameReferences: fileId → [ReferenceEntry list]
+ *
+ * 5. File Path Registry:
+ *    - filePathRegistry: Path ↔ Integer ID mapping
+ *
+ * <h2>File Path Interning</h2>
+ * All file-based maps use Integer keys (file IDs) instead of Path objects.
+ * This reduces persisted index size by ~50% for large codebases.
+ *
+ * The file path registry maps each unique Path to an integer ID. All file-based
+ * data structures reference files by ID. The registry is saved separately and
+ * loaded first during deserialization.
+ *
+ * Example JSON structure:
+ *   file_path_registry.json: {"/path/to/File1.java": 0, "/path/to/File2.java": 1}
+ *   file_to_types.json: {"0": ["com.example.Type1"], "1": ["com.example.Type2"]}
+ *
+ * <h2>Implementation Notes</h2>
+ * - Each save/load method should be independent (can fail without affecting others)
+ * - Return empty collections (not null) when data doesn't exist
+ * - Use buffered I/O for large data structures
+ * - Consider compression for large files (especially references)
+ *
+ * <h2>Current Implementation</h2>
+ * @see JsonIndexPersistence for the JSON-based implementation that saves each
+ *      data structure to a separate .json file in a directory.
+ *
+ * @see JavaIndex#saveTo(IndexPersistence) for the save implementation
+ * @see JavaIndex#loadFrom(IndexPersistence) for the load implementation
  */
 public interface IndexPersistence {
 
