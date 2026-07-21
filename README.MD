@@ -76,33 +76,101 @@ Example with custom workspace:
 
     $ java -Djavacls.workspace.path=/my/project/workspace -jar bin/felix.jar
 
-## Current Status
+## Dependencies & Shading Strategy
 
-The javac-ls framework includes:
+Javac-ls needs to use its own Java compiler (javac) and its own AST model (Eclipse JDT DOM) without conflicting with the JDK's built-in compiler or any Eclipse JDT installation on the host system. The solution is **package shading** -- relocating all classes under a `shaded.*` prefix so they coexist safely.
 
-### Core Features
-- **Java Indexing**: Full workspace indexing with type declarations, method/field signatures, and references
-- **File Path Interning**: Memory-efficient storage reducing index size by ~50% (1.8GB → 948MB for large codebases)
-- **Batched Parsing**: High-performance batch compilation using shared javac Context
-- **Incremental Updates**: Smart re-indexing with reference leak prevention
-- **Diagnostic Collection**: Compilation errors and warnings collected during indexing
-- **Type Hierarchy**: Subtype and implementor relationships for fast queries
-- **Reference Tracking**: Type and name references for "Find Usages" functionality
-- **Persistence**: JSON-based index persistence to avoid re-indexing on startup
+There are three shaded dependency trees:
 
-### Architecture
-- **JavaIndex**: In-memory index with FilePathRegistry for path interning
-- **DOMToIndexVisitor**: AST visitor that extracts declarations and references
-- **JavacDOMParser**: Wrapper around javac for parsing with/without binding resolution
-- **IndexPersistence**: Pluggable persistence layer (JSON implementation included)
-- **WorkspaceModel**: High-level API for managing projects and indexing
+### 1. nb-javac-shaded (The Compiler)
 
-### Recent Optimizations
-- File path interning: Each unique path stored once, referenced by integer ID
-  - 47.3% reduction in persisted index size
-  - All file-based maps use `Map<Integer, X>` instead of `Map<Path, X>`
-- Batch parsing with analyze: Diagnostics collected even without binding resolution
-- Reference leak fix: fileTypeReferences/fileNameReferences track all references per file for proper cleanup
+[nb-javac](https://github.com/oracle/nb-javac) is Oracle's fork of javac that exposes internal compiler APIs for IDE use. The [nb-javac-shaded](https://github.com/nb-javac-shaded/nb-javac-shaded) project takes the official `nb-javac` artifact from Maven Central and relocates its packages:
+
+- `com.sun.tools.*` → `shaded.com.sun.tools.*`
+- `com.sun.source.*` → `shaded.com.sun.source.*`
+- `javax.tools` → `shaded.javax.tools`
+- `javax.lang.*` → `shaded.javax.lang.*`
+- `javax.annotation.processing` → `shaded.javax.annotation.processing`
+
+**This project contains zero custom Java code.** It is purely a Maven build that applies `maven-shade-plugin` plus two shell scripts for multi-release JAR relocation and source JAR restructuring. Updating to a new JDK version of nb-javac means changing one version property in the POM and rebuilding.
+
+### 2. nnb-doclint-shaded (DocLint Checker)
+
+[nnb-doclint-shaded](https://github.com/nb-javac-shaded/nnb-doclint-shaded) provides JavaDoc comment validation (the `-Xdoclint` feature). It's 7 Java files extracted from OpenJDK JDK 26 with only two categories of changes:
+
+- **Java 17 downgrade patches** -- mechanical replacements of pattern-matching `instanceof` with traditional casts
+- **Package relocation** -- import statements rewritten to reference `shaded.*` packages
+
+No functional or algorithmic modifications were made to the upstream code.
+
+### 3. Shaded Eclipse JDT Core DOM (AST Model)
+
+The `org.jboss.tools.javac.ls.jdt.core.dom` bundle contains a shaded copy of the Eclipse JDT Core DOM model under `shaded.org.eclipse.jdt.*`. This provides the AST node type hierarchy (`CompilationUnit`, `MethodDeclaration`, `TypeDeclaration`, etc.), compiler problem definitions, and binding abstractions that the rest of the project uses as its AST representation.
+
+### Maintainability
+
+The shading layer has a **low maintenance burden**. The nb-javac-shaded project has no Java code at all, and nnb-doclint-shaded has only mechanical patches. Updating to a new JDK version is a version bump + rebuild for both.
+
+Known risks:
+- **Shell script fragility** -- the post-processing scripts in nb-javac-shaded assume specific JAR internal structure. If upstream nb-javac reorganizes, they'll silently break.
+- **No automated verification** -- there are no tests in the shading projects that validate the shaded JARs actually work.
+- **Two-project coordination** -- nb-javac-shaded excludes `com.sun.tools.doclint.**` because nnb-doclint-shaded handles it separately. Consumers need both.
+
+## Project Modules
+
+The project is an OSGi application built with Tycho (Eclipse/Maven build system), running on Apache Felix. The modules form a layered dependency stack:
+
+```
+org.jboss.tools.javac.ls.api          LSP protocol contract (interfaces, DAOs)
+        |
+        |   org.jboss.tools.javac.ls
+        |    .jdt.core.dom             Shaded Eclipse JDT AST model
+        |           |                  (CompilationUnit, ASTNode, IBinding, etc.)
+        |           |
+        |   org.jboss.tools.javac.ls
+        |    .parser                   Javac-to-JDT bridge
+        |           |                  Parses Java source with shaded nb-javac,
+        |           |                  produces JDT DOM nodes. Embeds the three
+        |           |                  shaded JARs. Binding resolution, diagnostics,
+        |           |                  javadoc processing.
+        |           |
+        |   org.jboss.tools.javac.ls
+        |    .index                    Symbol index
+        |           |                  JavaIndex, FilePathRegistry, persistence.
+        |           |                  Extracts declarations and references from AST.
+        |           |
+        |   org.jboss.tools.javac.ls
+        |    .search                   Search engine over the index
+        |           |                  Pattern matching, scopes, find references.
+        |           |
+        +-----+-----+
+              |
+  org.jboss.tools.javac.ls
+   .server                            LSP server implementation
+              |                        WorkspaceModel, classpath discovery,
+              |                        LSP protocol handlers, diagnostics.
+              |
+  org.jboss.tools.javac.ls
+   .foundation.core                   OSGi lifecycle, launchers, transport
+              |
+        [Distribution]                 Apache Felix 7.0.3 + all bundles
+```
+
+Supporting modules:
+- **api** (`org.jboss.tools.javac.ls.api`) -- defines the LSP protocol interfaces and data types, built on LSP4J
+- **foundation.core** -- OSGi lifecycle management, launcher integration, task scheduling
+- **distribution** -- packages everything as a standalone Felix application with logging and launcher scripts
+- **client CLI** -- a command-line client for connecting to the running server
+
+## Key Design Decisions
+
+- **File path interning**: Each unique file path is stored once in `FilePathRegistry` and referenced by integer ID throughout the index. Reduces persisted index size by 47.3% (1.8GB → 948MB on the Quarkus benchmark with 23,604 files). All file-based maps use `Map<Integer, X>` instead of `Map<Path, X>`.
+
+- **Dual reference tracking**: Every reference is added to two maps -- one keyed by name (for "Find References" queries) and one keyed by source file ID (for cleanup when re-indexing). This prevents reference leaks when files change.
+
+- **Batch parsing with lazy binding resolution**: Files are parsed in batches of 100 sharing a single javac Context for performance. `task.analyze()` is always called to collect diagnostics, but `IBinding` objects are only created on demand. This gives full error reporting without the cost of binding resolution during indexing.
+
+- **JSON persistence**: The index is persisted as separate JSON files (types, methods, references, etc.) to avoid re-indexing on startup. The file path registry is saved first and loaded first, then all `Location` objects are rehydrated with their `pathRegistry` reference after deserialization.
 
 ## Building
 
@@ -235,17 +303,10 @@ The benchmark reports:
 - **Per-file breakdown**: Size of each JSON file in the index
 - **Statistics**: Type count, method count, reference count, etc.
 
-## Index Architecture
+## Further Reading
 
-See detailed documentation in:
-- `JavaIndex.java` - Core index data structures and algorithms
-- `FilePathRegistry.java` - File path interning mechanism
-- `Location.java` - Source location with file path interning
-- `IndexPersistence.java` - Persistence interface and design
-
-Key concepts:
-1. **File Path Interning**: Stores each unique file path once, references by integer ID
-2. **Dual Reference Tracking**: References tracked both by name (for queries) and by file (for cleanup)
-3. **Incremental Updates**: removeFile() cleans up all data before re-indexing
-4. **Lazy Binding Resolution**: Parse without bindings for speed, analyze() for diagnostics
-5. **Transient PathRegistry**: Not serialized, rehydrated after deserialization
+Detailed Javadoc on the index architecture can be found in:
+- `JavaIndex.java` - Core index data structures, persistence, and incremental update algorithm
+- `FilePathRegistry.java` - File path interning mechanism with memory savings analysis
+- `Location.java` - Source location with file path interning and rehydration
+- `IndexPersistence.java` - Persistence interface and JSON file layout
