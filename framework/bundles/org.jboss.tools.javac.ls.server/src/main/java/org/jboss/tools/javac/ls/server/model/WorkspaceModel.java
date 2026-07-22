@@ -659,40 +659,40 @@ public class WorkspaceModel {
 		}
 
 		if (sync) {
-			// Phase 1: fast index (no analyze) — builds symbol index
 			LOG.info("Starting synchronous two-phase indexing");
 			try {
 				setInitializationState(InitializationState.STATE_INDEXING);
+				// Phase 1: fast index (parse-only, no classpath needed)
 				indexAllProjectsFast();
 			} catch (Exception e) {
 				LOG.error("Synchronous indexing failed", e);
 			} finally {
 				setInitializationState(InitializationState.STATE_READY);
 			}
-			// Phase 2: collect diagnostics (also synchronous in sync mode)
+			// Phase 2: re-index with bindings (blocking classpath discovery + analyze)
 			try {
-				collectAllProjectDiagnostics();
+				indexAllProjectsWithBindings();
 			} catch (Exception e) {
-				LOG.error("Diagnostic collection failed", e);
+				LOG.error("Binding resolution pass failed", e);
 			}
 		} else {
 			LOG.info("Starting background two-phase indexing");
 			backgroundExecutor.submit(() -> {
-				// Phase 1: fast index (no analyze)
 				try {
 					setInitializationState(InitializationState.STATE_INDEXING);
+					// Phase 1: fast index (parse-only, no classpath needed)
 					indexAllProjectsFast();
 				} catch (Exception e) {
 					LOG.error("Background indexing failed", e);
 				} finally {
 					setInitializationState(InitializationState.STATE_READY);
 				}
-				// Phase 2: collect diagnostics in background
+				// Phase 2: re-index with bindings (blocking classpath discovery + analyze)
 				// Server is already READY — diagnostics trickle in via publishDiagnostics
 				try {
-					collectAllProjectDiagnostics();
+					indexAllProjectsWithBindings();
 				} catch (Exception e) {
-					LOG.error("Background diagnostic collection failed", e);
+					LOG.error("Background binding resolution pass failed", e);
 				}
 			});
 		}
@@ -785,117 +785,6 @@ public class WorkspaceModel {
 	}
 
 	/**
-	 * Collect diagnostics for all projects by re-parsing with analyze().
-	 * This is Phase 2 of the two-phase startup: the index is already built,
-	 * so we only parse + analyze to collect diagnostics, without re-indexing.
-	 * Does not change initialization state — the server remains READY.
-	 */
-	private void collectAllProjectDiagnostics() {
-		LOG.info("Starting background diagnostic collection for all projects");
-		long startTime = System.currentTimeMillis();
-		int totalFiles = 0;
-
-		for (WorkspaceProject project : getProjects()) {
-			totalFiles += collectProjectDiagnostics(project.getName());
-		}
-
-		long duration = System.currentTimeMillis() - startTime;
-		LOG.info("Collected diagnostics for {} files across {} projects in {}ms",
-				totalFiles, projects.size(), duration);
-	}
-
-	/**
-	 * Collect diagnostics for a single project by re-parsing with analyze().
-	 * Does not rebuild the symbol index — only stores diagnostics and notifies listeners.
-	 */
-	private int collectProjectDiagnostics(String projectName) {
-		WorkspaceProject project = projects.get(projectName);
-		if (project == null) {
-			return 0;
-		}
-
-		LOG.info("Collecting diagnostics for project: {}", projectName);
-		long startTime = System.currentTimeMillis();
-
-		File projectDir = new File(project.getPath());
-		if (!projectDir.exists() || !projectDir.isDirectory()) {
-			return 0;
-		}
-
-		List<Path> javaFiles = findJavaFiles(projectDir.toPath());
-		if (javaFiles.isEmpty()) {
-			return 0;
-		}
-
-		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
-		List<File> classpath = new ArrayList<>();
-		for (IJavacClasspathEntry entry : classpathEntries) {
-			if (entry.getPath() != null) {
-				classpath.add(new File(entry.getPath()));
-			}
-		}
-
-		JavaIndex index = indexCache.getIndex();
-		int filesProcessed = 0;
-		int batchSize = 100;
-
-		for (int i = 0; i < javaFiles.size(); i += batchSize) {
-			int endIndex = Math.min(i + batchSize, javaFiles.size());
-			List<Path> batch = javaFiles.subList(i, endIndex);
-
-			try {
-				Map<String, String> sourceFiles = new LinkedHashMap<>();
-				for (Path javaFile : batch) {
-					try {
-						sourceFiles.put(javaFile.toString(), Files.readString(javaFile));
-					} catch (IOException e) {
-						LOG.error("Failed to read file for diagnostics: {}", javaFile, e);
-					}
-				}
-
-				if (sourceFiles.isEmpty()) {
-					continue;
-				}
-
-				JavacDOMParser parser = new JavacDOMParser();
-				Map<String, CompilationUnit> units = parser.parseBatch(
-					sourceFiles, classpath, AST.JLS21, null,
-					false, // no binding resolution
-					true   // yes analyze — collect diagnostics
-				);
-
-				for (Map.Entry<String, CompilationUnit> entry : units.entrySet()) {
-					CompilationUnit cu = entry.getValue();
-					if (cu == null) continue;
-
-					Path javaFile = Path.of(entry.getKey());
-					storeDiagnosticsForFile(index, javaFile, cu);
-					filesProcessed++;
-
-					// Notify listeners so LSP clients get publishDiagnostics
-					IProblem[] problems = cu.getProblems();
-					if (problems != null && problems.length > 0) {
-						DiagnosticList diagnostics = getFileDiagnostics(javaFile.toString());
-						notifyFileDiagnosticsChanged(javaFile.toString(), diagnostics);
-					}
-				}
-
-				LOG.debug("Collected diagnostics for batch {}/{}: {} files",
-						(i / batchSize) + 1,
-						(javaFiles.size() + batchSize - 1) / batchSize,
-						units.size());
-			} catch (Exception e) {
-				LOG.error("Failed to collect diagnostics for batch {}-{}", i, endIndex, e);
-			}
-		}
-
-		long duration = System.currentTimeMillis() - startTime;
-		LOG.info("Collected diagnostics for {} files in project '{}' in {}ms",
-				filesProcessed, projectName, duration);
-		return filesProcessed;
-	}
-
-	/**
 	 * Index a single project with full binding resolution.
 	 * Parses all .java files with bindings, caches DOMs, and re-indexes.
 	 *
@@ -925,8 +814,12 @@ public class WorkspaceModel {
 			return 0;
 		}
 
-		// Get classpath and sourcepath for parsing (non-blocking to avoid deadlock)
+		// Get classpath and sourcepath for parsing (blocking — ensures real classpath)
 		ClasspathAndSourcepath paths = getClasspathAndSourcepath(projectName);
+		if (paths.classpath.isEmpty()) {
+			LOG.warn("No classpath discovered for project '{}' — skipping binding resolution pass", projectName);
+			return 0;
+		}
 		Map<String, String> compilerOptions = buildCompilerOptions(paths.sourcepath);
 
 		// Parse and index files in batches (for memory efficiency)

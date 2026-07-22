@@ -86,8 +86,8 @@ public class IndexPerformanceTest {
 		// Add a project that points to the generated code
 		workspace.addProject("perftest", tempProjectDir.getAbsolutePath());
 
-		// Index the project
-		workspace.startIndexing(true); // synchronous
+		// Index the project (parse-only, no binding resolution or analyze)
+		workspace.indexProject("perftest");
 		long indexTime = System.currentTimeMillis() - indexStart;
 
 		// Measure memory after indexing
