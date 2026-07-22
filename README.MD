@@ -218,42 +218,36 @@ mvn integration-test -Dtest=WorkspaceModelIndexIntegrationTest -pl tests/org.jbo
 
 ## Benchmarking
 
-The framework includes benchmarking tools to measure indexing performance and memory usage.
+The framework includes benchmarking tools to measure indexing performance and memory usage. Both benchmarks require at least 8GB heap (`-Xmx8g`). You must clone and build the target repository yourself before running.
 
-### Benchmark 1: Spring PetClinic
+All benchmark commands below assume you are in the `framework/tests/org.jboss.tools.javac.ls.server.test` directory.
 
-A small-to-medium sized Spring Boot application for quick benchmarking.
+### Benchmark 1: MyBatis (~1,400 Java files)
+
+A smaller codebase for quick iteration and basic indexing validation.
 
 **Setup:**
 ```bash
-# Clone and build Spring PetClinic
 cd ~/apps/claude/benchmarks
-git clone https://github.com/spring-projects/spring-petclinic.git
-cd spring-petclinic
+git clone https://github.com/mybatis/mybatis-3.git mybatis
+cd mybatis
 mvn clean compile -DskipTests
 ```
 
 **Run Benchmark:**
 ```bash
-cd ~/apps/claude/javac-ls/framework
-mvn exec:java -pl tests/org.jboss.tools.javac.ls.server.test \
-  -Dexec.mainClass="org.jboss.tools.javac.ls.server.benchmark.IndexBenchmark" \
-  -Dexec.args="/home/rob/apps/claude/benchmarks/spring-petclinic"
+cd ~/apps/claude/javac-ls/framework/tests/org.jboss.tools.javac.ls.server.test
+mvn exec:exec -Dexec.executable=java \
+              -Dexec.classpathScope=test \
+              -Dexec.args="-Xmx8g -classpath %classpath org.jboss.tools.javac.ls.server.MyBatisBenchmark /path/to/mybatis"
 ```
 
-**Expected Results:**
-- Files: ~100 Java files
-- Index time: A few seconds
-- Memory: Low MB range
-- Index size: Small (< 10MB)
+### Benchmark 2: Quarkus (~21,000+ Java files)
 
-### Benchmark 2: Quarkus
-
-A large, complex codebase with 23,604 Java files for stress testing.
+A large multi-module Maven project for stress testing indexing performance.
 
 **Setup:**
 ```bash
-# Clone and build Quarkus
 cd ~/apps/claude/benchmarks
 git clone https://github.com/quarkusio/quarkus.git
 cd quarkus
@@ -262,46 +256,29 @@ mvn clean compile -DskipTests -Dquickly
 
 **Run Benchmark:**
 ```bash
-cd ~/apps/claude/javac-ls/framework
-mvn exec:java -pl tests/org.jboss.tools.javac.ls.server.test \
-  -Dexec.mainClass="org.jboss.tools.javac.ls.server.benchmark.IndexBenchmark" \
-  -Dexec.args="/home/rob/apps/claude/benchmarks/quarkus"
+cd ~/apps/claude/javac-ls/framework/tests/org.jboss.tools.javac.ls.server.test
+mvn exec:exec -Dexec.executable=java \
+              -Dexec.classpathScope=test \
+              -Dexec.args="-Xmx8g -classpath %classpath org.jboss.tools.javac.ls.server.QuarkusBenchmark /path/to/quarkus"
 ```
-
-**Expected Results (with file path interning):**
-- Files: 23,604 Java files
-- Index time: ~30-60 seconds
-- Peak memory: ~478MB in-memory
-- Persisted index: ~948MB (was 1.8GB before interning)
-- Breakdown:
-  - file_to_types.json: 2.5MB
-  - file_timestamps.json: 497KB
-  - file_type_references.json: 106MB
-  - file_name_references.json: 320MB
-  - file_path_registry.json: 3.8MB
-  - types.json, methods.json, fields.json, etc.
 
 ### Benchmark Cache
 
-The benchmarks create an index cache at:
-```
-~/apps/claude/benchmarks/<project-name>/javac-ls-index/
-```
+The benchmarks create a persistent workspace cache at `~/.cache/javac-ls/<name>-benchmark-workspace/`. Classpath discovery results are cached across runs for faster re-indexing.
 
-To get accurate "cold start" measurements, delete the cache first:
+To get accurate cold start measurements, delete the cache first:
 ```bash
-rm -rf ~/apps/claude/benchmarks/quarkus/javac-ls-index/
+rm -rf ~/.cache/javac-ls/mybatis-benchmark-workspace
+rm -rf ~/.cache/javac-ls/quarkus-benchmark-workspace
 ```
 
 ### Benchmark Output
 
-The benchmark reports:
-- **File counts**: Total Java files indexed
-- **Timing**: Parse time, index time, total time
-- **Memory**: Peak memory usage during indexing
-- **Index size**: Total persisted index size on disk
-- **Per-file breakdown**: Size of each JSON file in the index
-- **Statistics**: Type count, method count, reference count, etc.
+Each benchmark reports:
+- **File counts**: Total Java files found vs indexed
+- **Timing**: Total duration and throughput (files/sec)
+- **Memory**: Before/after/delta in MB
+- **Index statistics**: Type count, method count, field count
 
 ## Further Reading
 

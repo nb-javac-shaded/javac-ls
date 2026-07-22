@@ -1755,6 +1755,8 @@ public class WorkspaceModel {
 			paths.filter(Files::isRegularFile)
 				.filter(p -> p.toString().endsWith(".java"))
 				.filter(p -> !p.toString().endsWith(".qute.java"))
+				.filter(p -> !p.toString().contains("/target/"))
+				.filter(p -> !p.toString().contains("/build/"))
 				.forEach(javaFiles::add);
 		} catch (IOException e) {
 			LOG.error("Error finding Java files in directory: {}", rootDir, e);
