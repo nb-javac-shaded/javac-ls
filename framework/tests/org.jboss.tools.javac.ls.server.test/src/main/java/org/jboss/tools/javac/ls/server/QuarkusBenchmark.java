@@ -36,16 +36,22 @@ import org.jboss.tools.javac.ls.server.model.WorkspaceModel;
  */
 public class QuarkusBenchmark {
 
-	public static void main(String[] args) throws Exception {
-		if (args.length == 0) {
-			System.err.println("Usage: QuarkusBenchmark <path-to-quarkus-repo>");
-			System.exit(1);
-		}
+	private static final String SYSPROP_BENCHMARK_PATH = "javacls.test.benchmark.path";
+	private static final String DEFAULT_BENCHMARK_PATH =
+			System.getProperty("user.home") + "/apps/claude/benchmarks/quarkus";
 
-		String quarkusPath = args[0];
+	public static void main(String[] args) throws Exception {
+		String quarkusPath;
+		if (args.length > 0) {
+			quarkusPath = args[0];
+		} else {
+			quarkusPath = System.getProperty(SYSPROP_BENCHMARK_PATH, DEFAULT_BENCHMARK_PATH);
+		}
 		File quarkusDir = new File(quarkusPath);
 		if (!quarkusDir.exists() || !quarkusDir.isDirectory()) {
 			System.err.println("Directory not found: " + quarkusPath);
+			System.err.println("Usage: QuarkusBenchmark <path-to-quarkus-repo>");
+			System.err.println("  or set -D" + SYSPROP_BENCHMARK_PATH + "=<path>");
 			System.exit(1);
 		}
 

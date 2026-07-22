@@ -34,13 +34,20 @@ import org.jboss.tools.javac.ls.server.model.WorkspaceModel;
  */
 public class MyBatisBenchmark {
 
-	public static void main(String[] args) throws Exception {
-		if (args.length == 0) {
-			System.err.println("Usage: MyBatisBenchmark <path-to-mybatis-repo>");
-			System.exit(1);
-		}
+	private static final String SYSPROP_BENCHMARK_PATH = "javacls.test.benchmark.path";
 
-		String mybatisPath = args[0];
+	public static void main(String[] args) throws Exception {
+		String mybatisPath;
+		if (args.length > 0) {
+			mybatisPath = args[0];
+		} else {
+			mybatisPath = System.getProperty(SYSPROP_BENCHMARK_PATH);
+			if (mybatisPath == null) {
+				System.err.println("Usage: MyBatisBenchmark <path-to-mybatis-repo>");
+				System.err.println("  or set -D" + SYSPROP_BENCHMARK_PATH + "=<path>");
+				System.exit(1);
+			}
+		}
 		File mybatisDir = new File(mybatisPath);
 		if (!mybatisDir.exists() || !mybatisDir.isDirectory()) {
 			System.err.println("Directory not found: " + mybatisPath);

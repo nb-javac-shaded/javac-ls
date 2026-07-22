@@ -71,6 +71,7 @@
 		<module>client</module>
 		<module>framework</module>
 		<module>distribution</module>
+		<module>integration-tests</module>
 	</modules>
 
 	<build>
