@@ -93,6 +93,17 @@ public class JavacDOMParser {
 			int apiLevel,
 			Map<String, String> compilerOptions,
 			boolean resolveBindings) {
+		return parse(sourceContent, fileName, classpath, apiLevel, compilerOptions, resolveBindings, true);
+	}
+
+	public CompilationUnit parse(
+			String sourceContent,
+			String fileName,
+			List<File> classpath,
+			int apiLevel,
+			Map<String, String> compilerOptions,
+			boolean resolveBindings,
+			boolean analyze) {
 
 		if (sourceContent == null) {
 			throw new IllegalArgumentException("sourceContent cannot be null");
@@ -239,13 +250,14 @@ public class JavacDOMParser {
 			// Initialize comment mapper to associate comments with AST nodes
 			JavacDomPackageAccessor.initCommentMapper(result, sourceContent.toCharArray());
 
-			if (resolveBindings) {
+			if (analyze || resolveBindings) {
 				Throwable caught = null;
 				do {
 					caught = null;
 					try {
 						var analyzeResults = task.analyze();
 						for (var element : analyzeResults) {
+							// Consume results to trigger diagnostic reporting
 						}
 					} catch (Throwable t) {
 						caught = t;
@@ -589,6 +601,16 @@ public class JavacDOMParser {
 			int apiLevel,
 			Map<String, String> compilerOptions,
 			boolean resolveBindings) {
+		return parseBatch(sourceFiles, classpath, apiLevel, compilerOptions, resolveBindings, true);
+	}
+
+	public Map<String, CompilationUnit> parseBatch(
+			Map<String, String> sourceFiles,
+			List<File> classpath,
+			int apiLevel,
+			Map<String, String> compilerOptions,
+			boolean resolveBindings,
+			boolean analyze) {
 
 		if (sourceFiles == null || sourceFiles.isEmpty()) {
 			return Collections.emptyMap();
@@ -694,13 +716,14 @@ public class JavacDOMParser {
 					javacUnits.add((JCCompilationUnit) tree);
 				}
 
-				if (resolveBindings) {
+				if (analyze || resolveBindings) {
 					Throwable caught = null;
 					do {
 						caught = null;
 						try {
 							var analyzeResults = task.analyze();
 							for (var element : analyzeResults) {
+								// Consume results to trigger diagnostic reporting
 							}
 						} catch (Throwable t) {
 							caught = t;

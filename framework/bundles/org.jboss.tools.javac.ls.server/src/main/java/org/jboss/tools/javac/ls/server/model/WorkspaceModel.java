@@ -659,25 +659,40 @@ public class WorkspaceModel {
 		}
 
 		if (sync) {
-			LOG.info("Starting synchronous indexing with binding resolution");
+			// Phase 1: fast index (no analyze) — builds symbol index
+			LOG.info("Starting synchronous two-phase indexing");
 			try {
 				setInitializationState(InitializationState.STATE_INDEXING);
-				indexAllProjectsWithBindings();
+				indexAllProjectsFast();
 			} catch (Exception e) {
 				LOG.error("Synchronous indexing failed", e);
 			} finally {
 				setInitializationState(InitializationState.STATE_READY);
 			}
+			// Phase 2: collect diagnostics (also synchronous in sync mode)
+			try {
+				collectAllProjectDiagnostics();
+			} catch (Exception e) {
+				LOG.error("Diagnostic collection failed", e);
+			}
 		} else {
-			LOG.info("Starting background indexing with binding resolution");
+			LOG.info("Starting background two-phase indexing");
 			backgroundExecutor.submit(() -> {
+				// Phase 1: fast index (no analyze)
 				try {
 					setInitializationState(InitializationState.STATE_INDEXING);
-					indexAllProjectsWithBindings();
+					indexAllProjectsFast();
 				} catch (Exception e) {
 					LOG.error("Background indexing failed", e);
 				} finally {
 					setInitializationState(InitializationState.STATE_READY);
+				}
+				// Phase 2: collect diagnostics in background
+				// Server is already READY — diagnostics trickle in via publishDiagnostics
+				try {
+					collectAllProjectDiagnostics();
+				} catch (Exception e) {
+					LOG.error("Background diagnostic collection failed", e);
 				}
 			});
 		}
@@ -711,6 +726,173 @@ public class WorkspaceModel {
 		long duration = System.currentTimeMillis() - startTime;
 		LOG.info("Indexed {} files with bindings across {} projects in {}ms",
 				totalFiles, projects.size(), duration);
+	}
+
+	/**
+	 * Index all projects without analyze() for fast startup.
+	 * Builds the symbol index only — diagnostics are collected separately in Phase 2.
+	 */
+	private void indexAllProjectsFast() {
+		LOG.info("Phase 1: fast indexing (no analyze) for all projects");
+		long startTime = System.currentTimeMillis();
+		int totalFiles = 0;
+
+		for (WorkspaceProject project : getProjects()) {
+			String projectName = project.getName();
+			WorkspaceProject p = projects.get(projectName);
+			if (p == null) continue;
+
+			File projectDir = new File(p.getPath());
+			if (!projectDir.exists() || !projectDir.isDirectory()) continue;
+
+			List<Path> javaFiles = findJavaFiles(projectDir.toPath());
+			if (javaFiles.isEmpty()) continue;
+
+			ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+			List<File> classpath = new ArrayList<>();
+			for (IJavacClasspathEntry entry : classpathEntries) {
+				if (entry.getPath() != null) {
+					classpath.add(new File(entry.getPath()));
+				}
+			}
+
+			int filesIndexed = 0;
+			indexCache.lockWrite();
+			try {
+				JavaIndex index = indexCache.getIndex();
+				int batchSize = 100;
+				for (int i = 0; i < javaFiles.size(); i += batchSize) {
+					int endIndex = Math.min(i + batchSize, javaFiles.size());
+					List<Path> batch = javaFiles.subList(i, endIndex);
+					try {
+						filesIndexed += indexBatch(batch, classpath, index, false);
+					} catch (Exception e) {
+						LOG.error("Failed to index batch {}-{}", i, endIndex, e);
+					}
+				}
+				indexCache.markDirty();
+			} finally {
+				indexCache.unlockWrite();
+			}
+
+			totalFiles += filesIndexed;
+			LOG.info("Fast-indexed {} files in project '{}'", filesIndexed, projectName);
+		}
+
+		long duration = System.currentTimeMillis() - startTime;
+		LOG.info("Phase 1 complete: indexed {} files across {} projects in {}ms",
+				totalFiles, projects.size(), duration);
+	}
+
+	/**
+	 * Collect diagnostics for all projects by re-parsing with analyze().
+	 * This is Phase 2 of the two-phase startup: the index is already built,
+	 * so we only parse + analyze to collect diagnostics, without re-indexing.
+	 * Does not change initialization state — the server remains READY.
+	 */
+	private void collectAllProjectDiagnostics() {
+		LOG.info("Starting background diagnostic collection for all projects");
+		long startTime = System.currentTimeMillis();
+		int totalFiles = 0;
+
+		for (WorkspaceProject project : getProjects()) {
+			totalFiles += collectProjectDiagnostics(project.getName());
+		}
+
+		long duration = System.currentTimeMillis() - startTime;
+		LOG.info("Collected diagnostics for {} files across {} projects in {}ms",
+				totalFiles, projects.size(), duration);
+	}
+
+	/**
+	 * Collect diagnostics for a single project by re-parsing with analyze().
+	 * Does not rebuild the symbol index — only stores diagnostics and notifies listeners.
+	 */
+	private int collectProjectDiagnostics(String projectName) {
+		WorkspaceProject project = projects.get(projectName);
+		if (project == null) {
+			return 0;
+		}
+
+		LOG.info("Collecting diagnostics for project: {}", projectName);
+		long startTime = System.currentTimeMillis();
+
+		File projectDir = new File(project.getPath());
+		if (!projectDir.exists() || !projectDir.isDirectory()) {
+			return 0;
+		}
+
+		List<Path> javaFiles = findJavaFiles(projectDir.toPath());
+		if (javaFiles.isEmpty()) {
+			return 0;
+		}
+
+		ArrayList<IJavacClasspathEntry> classpathEntries = getProjectClasspathNonBlocking(projectName, false);
+		List<File> classpath = new ArrayList<>();
+		for (IJavacClasspathEntry entry : classpathEntries) {
+			if (entry.getPath() != null) {
+				classpath.add(new File(entry.getPath()));
+			}
+		}
+
+		JavaIndex index = indexCache.getIndex();
+		int filesProcessed = 0;
+		int batchSize = 100;
+
+		for (int i = 0; i < javaFiles.size(); i += batchSize) {
+			int endIndex = Math.min(i + batchSize, javaFiles.size());
+			List<Path> batch = javaFiles.subList(i, endIndex);
+
+			try {
+				Map<String, String> sourceFiles = new LinkedHashMap<>();
+				for (Path javaFile : batch) {
+					try {
+						sourceFiles.put(javaFile.toString(), Files.readString(javaFile));
+					} catch (IOException e) {
+						LOG.error("Failed to read file for diagnostics: {}", javaFile, e);
+					}
+				}
+
+				if (sourceFiles.isEmpty()) {
+					continue;
+				}
+
+				JavacDOMParser parser = new JavacDOMParser();
+				Map<String, CompilationUnit> units = parser.parseBatch(
+					sourceFiles, classpath, AST.JLS21, null,
+					false, // no binding resolution
+					true   // yes analyze — collect diagnostics
+				);
+
+				for (Map.Entry<String, CompilationUnit> entry : units.entrySet()) {
+					CompilationUnit cu = entry.getValue();
+					if (cu == null) continue;
+
+					Path javaFile = Path.of(entry.getKey());
+					storeDiagnosticsForFile(index, javaFile, cu);
+					filesProcessed++;
+
+					// Notify listeners so LSP clients get publishDiagnostics
+					IProblem[] problems = cu.getProblems();
+					if (problems != null && problems.length > 0) {
+						DiagnosticList diagnostics = getFileDiagnostics(javaFile.toString());
+						notifyFileDiagnosticsChanged(javaFile.toString(), diagnostics);
+					}
+				}
+
+				LOG.debug("Collected diagnostics for batch {}/{}: {} files",
+						(i / batchSize) + 1,
+						(javaFiles.size() + batchSize - 1) / batchSize,
+						units.size());
+			} catch (Exception e) {
+				LOG.error("Failed to collect diagnostics for batch {}-{}", i, endIndex, e);
+			}
+		}
+
+		long duration = System.currentTimeMillis() - startTime;
+		LOG.info("Collected diagnostics for {} files in project '{}' in {}ms",
+				filesProcessed, projectName, duration);
+		return filesProcessed;
 	}
 
 	/**
@@ -1601,14 +1783,13 @@ public class WorkspaceModel {
 		// Read file content
 		String sourceContent = new String(Files.readAllBytes(javaFile));
 
-		// Parse to CompilationUnit (without resolving bindings for performance)
 		CompilationUnit cu = parser.parse(
 				sourceContent,
 				javaFile.toString(),
 				classpath,
 				AST.JLS21,
 				null,
-				false // Don't resolve bindings for initial indexing
+				false  // no binding resolution
 		);
 
 		// Remove old declarations for this file (incremental update)
@@ -1632,6 +1813,10 @@ public class WorkspaceModel {
 	 * @return number of files successfully indexed
 	 */
 	private int indexBatch(List<Path> javaFiles, List<File> classpath, JavaIndex index) throws IOException {
+		return indexBatch(javaFiles, classpath, index, true);
+	}
+
+	private int indexBatch(List<Path> javaFiles, List<File> classpath, JavaIndex index, boolean analyze) throws IOException {
 		if (javaFiles.isEmpty()) {
 			return 0;
 		}
@@ -1652,17 +1837,14 @@ public class WorkspaceModel {
 		}
 
 		long parseStart = System.currentTimeMillis();
-		// Parse all files in a single batch (shared Context)
-		// NOTE: We pass resolveBindings=false for performance, but javac still runs
-		// full type-checking (task.analyze()), so we get all diagnostics anyway.
-		// The flag only controls whether we create JDT IBinding objects.
 		JavacDOMParser parser = new JavacDOMParser();
 		Map<String, CompilationUnit> units = parser.parseBatch(
 			sourceFiles,
 			classpath,
 			AST.JLS21,
 			null,  // compiler options
-			false  // NO binding resolution - diagnostics are still collected
+			false, // no binding resolution
+			analyze
 		);
 		long parseTime = System.currentTimeMillis() - parseStart;
 
@@ -1724,8 +1906,9 @@ public class WorkspaceModel {
 				cu.accept(visitor);
 				visitor.finishIndexing();
 
-				// Store diagnostics from this compilation unit
-				storeDiagnosticsForFile(index, javaFile, cu);
+				if (analyze) {
+					storeDiagnosticsForFile(index, javaFile, cu);
+				}
 
 				indexed.incrementAndGet();
 			} catch (Exception e) {
