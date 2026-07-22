@@ -1020,28 +1020,28 @@ public class WorkspaceModel {
 	}
 
 	/**
-	 * Index a single project asynchronously in the background.
-	 * Changes initialization state to INDEXING while indexing,
-	 * then back to READY when complete.
+	 * Index a single project asynchronously in the background using two-phase indexing.
+	 * Phase 1: fast parse-only index (no analyze, no bindings) → fires READY when done.
+	 * Phase 2: re-index with binding resolution in background (diagnostics trickle in).
 	 *
 	 * @param projectName the project name
 	 */
 	public void indexProjectAsync(String projectName) {
-		int previousState = initializationState;
 		setInitializationState(InitializationState.STATE_INDEXING);
 
 		backgroundExecutor.submit(() -> {
 			try {
 				indexProject(projectName);
 			} catch (Exception e) {
-				LOG.error("Background indexing failed for project: {}", projectName, e);
+				LOG.error("Background indexing Phase 1 failed for project: {}", projectName, e);
 			} finally {
-				// Restore to READY (or previous state if it wasn't READY)
-				setInitializationState(
-					previousState == InitializationState.STATE_READY || previousState == InitializationState.STATE_INDEXING
-						? InitializationState.STATE_READY
-						: previousState
-				);
+				setInitializationState(InitializationState.STATE_READY);
+			}
+			// Phase 2: re-index with bindings (blocking classpath discovery + analyze)
+			try {
+				indexProjectWithBindings(projectName);
+			} catch (Exception e) {
+				LOG.error("Background indexing Phase 2 failed for project: {}", projectName, e);
 			}
 		});
 	}
@@ -1102,7 +1102,7 @@ public class WorkspaceModel {
 
 				try {
 					long batchStart = System.currentTimeMillis();
-					int indexed = indexBatch(batch, classpath, index);
+					int indexed = indexBatch(batch, classpath, index, false);
 					long batchTime = System.currentTimeMillis() - batchStart;
 					totalBatchTime += batchTime;
 					batchCount++;
