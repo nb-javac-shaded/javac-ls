@@ -239,25 +239,22 @@ public class JavacDOMParser {
 			// Initialize comment mapper to associate comments with AST nodes
 			JavacDomPackageAccessor.initCommentMapper(result, sourceContent.toCharArray());
 
-			// Always analyze to get diagnostics (errors/warnings)
-			// Even if we don't resolve bindings, we need analysis for problem reporting
-			// Retry analyze until it succeeds (pattern from eclipse.jdt.javac)
-			Throwable caught = null;
-			do {
-				caught = null;
-				try {
-					// Fully consume the analyze iterator to ensure diagnostics are reported
-					var analyzeResults = task.analyze();
-					for (var element : analyzeResults) {
-						// Just consume the results
+			if (resolveBindings) {
+				Throwable caught = null;
+				do {
+					caught = null;
+					try {
+						var analyzeResults = task.analyze();
+						for (var element : analyzeResults) {
+						}
+					} catch (Throwable t) {
+						caught = t;
+						LOG.warn("Error while analyzing (will retry): {}", t.getMessage());
 					}
-				} catch (Throwable t) {
-					caught = t;
-					LOG.warn("Error while analyzing (will retry): {}", t.getMessage());
-				}
-			} while (caught != null);
+				} while (caught != null);
+				LOG.debug("Analysis complete, diagnostics reported");
+			}
 
-			LOG.debug("Analysis complete, diagnostics reported");
 			if (resolveBindings) {
 				// Create and attach JavacBindingResolver for binding resolution
 				List<JCCompilationUnit> javacCompilationUnits = List.of(javacUnit);
@@ -697,25 +694,22 @@ public class JavacDOMParser {
 					javacUnits.add((JCCompilationUnit) tree);
 				}
 
-				// Always analyze to collect diagnostics (even without binding resolution)
-				// Retry analyze until it succeeds (pattern from eclipse.jdt.javac)
-				Throwable caught = null;
-				do {
-					caught = null;
-					try {
-						// Fully consume analyze iterator to ensure diagnostics are reported
-						var analyzeResults = task.analyze();
-						for (var element : analyzeResults) {
-							// Just consume the results
+				if (resolveBindings) {
+					Throwable caught = null;
+					do {
+						caught = null;
+						try {
+							var analyzeResults = task.analyze();
+							for (var element : analyzeResults) {
+							}
+						} catch (Throwable t) {
+							caught = t;
+							LOG.warn("Error while analyzing batch (will retry): {}", t.getMessage());
 						}
-					} catch (Throwable t) {
-						caught = t;
-						LOG.warn("Error while analyzing batch (will retry): {}", t.getMessage());
-					}
-				} while (caught != null);
-				LOG.debug("Batch analysis complete");
+					} while (caught != null);
+					LOG.debug("Batch analysis complete");
+				}
 
-				// If resolving bindings, create and attach JavacBindingResolver for ALL units
 				if (resolveBindings) {
 					try {
 						JavacBindingResolver resolver = new JavacBindingResolver(task, context, null, javacUnits);
